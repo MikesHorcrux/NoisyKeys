@@ -11,163 +11,166 @@ struct ContentView: View {
     let controller: KeyboardNoiseController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Noisy Keys")
-                    .font(.system(size: 38, weight: .heavy, design: .rounded))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Noisy Keys")
+                        .font(.system(size: 38, weight: .heavy, design: .rounded))
 
-                Text("Every key tap makes noise. Keep the app running, allow keyboard listening, and your Mac gets a little more unhinged.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
+                    Text("Every key tap makes noise. Keep the app running, allow keyboard listening, and your Mac gets a little more unhinged.")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
 
-            HStack(spacing: 16) {
-                StatusCard(
-                    title: "Scope",
-                    value: controller.monitoringScope,
-                    detail: controller.accessMessage
-                )
+                HStack(alignment: .top, spacing: 14) {
+                    StatusCard(
+                        title: "Scope",
+                        value: controller.monitoringScope,
+                        detail: controller.accessMessage
+                    )
 
-                StatusCard(
-                    title: "Clacks",
-                    value: "\(controller.totalKeyPresses)",
-                    detail: controller.lastEventDescription
-                )
+                    StatusCard(
+                        title: "Clacks",
+                        value: "\(controller.totalKeyPresses)",
+                        detail: controller.lastEventDescription
+                    )
 
-                StatusCard(
-                    title: "Music",
-                    value: controller.selectedSoundMode.displayName,
-                    detail: controller.selectedSoundModeSummary
-                )
-            }
+                    StatusCard(
+                        title: "Music",
+                        value: controller.selectedSoundMode.displayName,
+                        detail: controller.selectedSoundModeSummary
+                    )
+                }
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Last Event")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Last Event")
+                        .font(.headline)
 
-                Text(controller.lastEventDescription)
-                    .font(.system(.title3, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            }
+                    Text(controller.lastEventDescription)
+                        .font(.system(.title3, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
 
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Sound Mode")
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Sound Mode")
+                        .font(.headline)
 
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 12),
-                    GridItem(.flexible(), spacing: 12)
-                ], spacing: 12) {
-                    ForEach(controller.availableSoundModes) { mode in
-                        SoundModeButton(
-                            mode: mode,
-                            isSelected: mode == controller.selectedSoundMode
-                        ) {
-                            controller.setSoundMode(mode)
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12)
+                    ], spacing: 12) {
+                        ForEach(controller.availableSoundModes) { mode in
+                            SoundModeButton(
+                                mode: mode,
+                                isSelected: mode == controller.selectedSoundMode
+                            ) {
+                                controller.setSoundMode(mode)
+                            }
                         }
                     }
-                }
 
-                Text("Pick one fixed vibe and let it stay there. Four buttons, no profile maze.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Current Feel")
-                        .font(.subheadline.weight(.semibold))
+                    Text("Pick one fixed vibe and let it stay there. Four buttons, no profile maze.")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
 
-                    Text(controller.performanceDescription)
-                        .font(.system(.body, design: .monospaced))
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Tempo")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(controller.currentTempoDescription)
-                        .font(.system(.body, design: .monospaced))
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Last Sound Slot")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(controller.lastSoundIdentifier)
-                        .font(.system(.body, design: .monospaced))
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Learned Top Letters")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(controller.learnedKeysDescription)
-                        .font(.system(.body, design: .monospaced))
-                }
-
-                Text(controller.adaptiveMappingDescription)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-
-                Text("The buttons stay simple, but the engine is still learning your common keys underneath.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(20)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Noise Switch")
-                    .font(.headline)
-
-                Toggle(isOn: Binding(
-                    get: { controller.isNoiseEnabled },
-                    set: { controller.setNoiseEnabled($0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(controller.isNoiseEnabled ? "Keyboard sounds are on" : "Keyboard sounds are off")
-                            .font(.title3.weight(.semibold))
-
-                        Text(controller.isNoiseEnabled
-                             ? "Turn this off when the bit stops being funny."
-                             : "Turn this back on when you want the goblin energy again.")
-                            .font(.callout)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Current Feel")
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
+
+                        Text(controller.performanceDescription)
+                            .font(.system(.body, design: .monospaced))
                     }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Tempo")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(controller.currentTempoDescription)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Last Sound Slot")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(controller.lastSoundIdentifier)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Learned Top Letters")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(controller.learnedKeysDescription)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    Text(controller.adaptiveMappingDescription)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    Text("The buttons stay simple, but the engine is still learning your common keys underneath.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }
-                .toggleStyle(.switch)
+                .padding(18)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Noise Switch")
+                        .font(.headline)
+
+                    Toggle(isOn: Binding(
+                        get: { controller.isNoiseEnabled },
+                        set: { controller.setNoiseEnabled($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(controller.isNoiseEnabled ? "Keyboard sounds are on" : "Keyboard sounds are off")
+                                .font(.title3.weight(.semibold))
+
+                            Text(controller.isNoiseEnabled
+                                 ? "Turn this off when the bit stops being funny."
+                                 : "Turn this back on when you want the goblin energy again.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                }
+                .padding(18)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                HStack(spacing: 12) {
+                    Button("Check Access Again") {
+                        controller.refreshAccessStatus(promptIfNeeded: true)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Test Noise") {
+                        controller.playTestNoise()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Text("Modifier keys count too. Held-repeat keyDown events are ignored so the app reacts to taps, not key-repeat spam.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            .padding(20)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-            HStack(spacing: 12) {
-                Button("Check Access Again") {
-                    controller.refreshAccessStatus(promptIfNeeded: true)
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button("Test Noise") {
-                    controller.playTestNoise()
-                }
-                .buttonStyle(.bordered)
-            }
-
-            Text("Modifier keys count too. Held-repeat keyDown events are ignored so the app reacts to taps, not key-repeat spam.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(24)
         }
-        .padding(32)
         .frame(minWidth: 760, minHeight: 520, alignment: .topLeading)
     }
 }
@@ -244,7 +247,7 @@ private struct StatusCard: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
+        .padding(18)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
