@@ -6,54 +6,92 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    let controller: KeyboardNoiseController
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
-        }
-    }
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Noisy Keys")
+                    .font(.system(size: 38, weight: .heavy, design: .rounded))
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+                Text("Every key tap makes noise. Keep the app running, allow keyboard listening, and your Mac gets a little more unhinged.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
             }
+
+            HStack(spacing: 16) {
+                StatusCard(
+                    title: "Scope",
+                    value: controller.monitoringScope,
+                    detail: controller.accessMessage
+                )
+
+                StatusCard(
+                    title: "Clacks",
+                    value: "\(controller.totalKeyPresses)",
+                    detail: controller.lastEventDescription
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Last Event")
+                    .font(.headline)
+
+                Text(controller.lastEventDescription)
+                    .font(.system(.title3, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+
+            HStack(spacing: 12) {
+                Button("Check Access Again") {
+                    controller.refreshAccessStatus(promptIfNeeded: true)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Test Noise") {
+                    controller.playTestNoise()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Text("Modifier keys count too. Held-repeat keyDown events are ignored so the app reacts to taps, not key-repeat spam.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
+        .padding(32)
+        .frame(minWidth: 680, minHeight: 420, alignment: .topLeading)
     }
 }
 
 #Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+    ContentView(controller: KeyboardNoiseController())
+}
+
+private struct StatusCard: View {
+    let title: String
+    let value: String
+    let detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Text(value)
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+
+            Text(detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
 }

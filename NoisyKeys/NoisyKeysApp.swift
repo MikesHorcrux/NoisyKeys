@@ -6,27 +6,25 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct NoisyKeysApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var keyboardNoiseController = KeyboardNoiseController()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(controller: keyboardNoiseController)
+                .task {
+                    keyboardNoiseController.start()
+                }
         }
-        .modelContainer(sharedModelContainer)
+
+        MenuBarExtra(
+            "NoisyKeys",
+            systemImage: keyboardNoiseController.isNoiseEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill"
+        ) {
+            MenuBarControlsView(controller: keyboardNoiseController)
+        }
+        .menuBarExtraStyle(.window)
     }
 }
