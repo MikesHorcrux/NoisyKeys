@@ -76,7 +76,33 @@ struct ContentView: View {
                         .font(.system(.body, design: .monospaced))
                 }
 
-                Text("Piano now uses the system instrument bank, and the sound slot string is still the stable hook if we swap to our own packs later.")
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Performance State")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(controller.performanceDescription)
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Learned Top Letters")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(controller.learnedKeysDescription)
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                Text(controller.adaptiveMappingDescription)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                Text("Piano now reacts to typing speed and tone, and the sound slot string is still the stable hook if we swap to our own packs later.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

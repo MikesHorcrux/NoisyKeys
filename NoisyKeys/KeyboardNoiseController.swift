@@ -20,14 +20,23 @@ final class KeyboardNoiseController {
     var lastEventDescription = "Waiting for the first clack."
     var lastSoundIdentifier = "Waiting for the first mapped sound."
     var currentTempoDescription = TypingTempoSnapshot.idle.summary
+    var learnedKeysDescription = "Learning your letter habits."
+    var adaptiveMappingDescription = "Frequent letters will settle into the safest note families."
+    var performanceDescription = "Warm piano · neutral tone"
     var totalKeyPresses = 0
 
     private let player = KeyboardSynthPlayer()
-    private var musicEngine = KeyboardMusicEngine()
+    private var musicEngine = KeyboardMusicEngine(persistentLearning: true)
     private var localMonitor: Any?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
     private var hasStarted = false
+
+    init() {
+        learnedKeysDescription = musicEngine.learnedKeysSummary
+        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
+        performanceDescription = musicEngine.performanceDescription
+    }
 
     deinit {
         stop()
@@ -59,6 +68,7 @@ final class KeyboardNoiseController {
         } else {
             removeLocalMonitor()
             disableEventTap()
+            player.resetPerformanceState()
             accessMessage = hasGlobalAccess
                 ? "Noise is off. Flip it back on from the menu bar whenever you want more clacks."
                 : "Noise is off. Grant Input Monitoring later if you want system-wide key sounds."
@@ -90,8 +100,12 @@ final class KeyboardNoiseController {
     }
 
     func setInstrument(_ instrument: KeyboardInstrument) {
+        player.resetPerformanceState()
         selectedInstrument = instrument
-        musicEngine.instrument = instrument
+        musicEngine.setInstrument(instrument)
+        learnedKeysDescription = musicEngine.learnedKeysSummary
+        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
+        performanceDescription = musicEngine.performanceDescription
     }
 
     private func installLocalMonitorIfNeeded() {
@@ -212,6 +226,9 @@ final class KeyboardNoiseController {
         currentTempoDescription = plan.tempo.summary
         lastSoundIdentifier = plan.soundID
         lastEventDescription = plan.debugSummary
+        learnedKeysDescription = musicEngine.learnedKeysSummary
+        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
+        performanceDescription = musicEngine.performanceDescription
         player.play(plan)
     }
 }

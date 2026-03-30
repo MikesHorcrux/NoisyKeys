@@ -12,6 +12,7 @@ import Foundation
 final class KeyboardSynthPlayer {
     private let engine = AVAudioEngine()
     private let spaceMixer = AVAudioMixerNode()
+    private let toneEQ = AVAudioUnitEQ(numberOfBands: 3)
     private let reverb = AVAudioUnitReverb()
     private let delay = AVAudioUnitDelay()
     private let soundBankURL = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
@@ -20,50 +21,80 @@ final class KeyboardSynthPlayer {
     private var loFiVoices: [SamplerVoice] = []
     private var nextPianoVoiceIndex = 0
     private var nextLoFiVoiceIndex = 0
-    private var currentEffectProfile: KeyboardInstrument?
+    private var currentEffectProfile: EffectProfileKey?
+    private var pianoPedalEngaged = false
+    private var loFiPedalEngaged = false
 
     init() {
         engine.attach(spaceMixer)
+        engine.attach(toneEQ)
         engine.attach(reverb)
         engine.attach(delay)
 
         configureVoicePool()
 
-        engine.connect(spaceMixer, to: reverb, format: nil)
+        engine.connect(spaceMixer, to: toneEQ, format: nil)
+        engine.connect(toneEQ, to: reverb, format: nil)
         engine.connect(reverb, to: delay, format: nil)
         engine.connect(delay, to: engine.mainMixerNode, format: nil)
 
         spaceMixer.outputVolume = 0.94
         engine.mainMixerNode.outputVolume = 0.88
 
-        configureEffects(for: .piano)
+        configureEffects(for: SoundTriggerPlan(
+            instrument: .piano,
+            role: .melody,
+            soundID: "preview",
+            noteLabel: "C4",
+            noteFamilyName: "Preview",
+            keyLabel: "Preview",
+            source: .localApp,
+            tempo: .idle,
+            textMood: .neutral,
+            performanceStyle: .warm,
+            sustainPedalEngaged: false,
+            velocity: 0.72,
+            learnedRank: nil
+        ))
         engine.prepare()
         startEngineIfNeeded()
     }
 
     func play(_ plan: SoundTriggerPlan) {
         startEngineIfNeeded()
-        configureEffects(for: plan.instrument)
+        configureEffects(for: plan)
+        applyPhrasePedal(for: plan)
 
         guard let noteNumber = KeyboardNoteFrequency.midiNote(for: plan.noteLabel) else {
             return
         }
 
-        let profile = InstrumentPlaybackProfile(plan.instrument)
+        let profile = InstrumentPlaybackProfile(plan.instrument, performanceStyle: plan.performanceStyle)
         let scaledVelocity = min(max(plan.velocity * profile.roleVelocityScale(for: plan.role), 0.16), 1)
         let midiVelocity = UInt8(max(1, min(Int((scaledVelocity * 127).rounded()), 127)))
-        let voice = nextVoice(for: plan.instrument)
+        let duration = profile.duration(for: plan.role, tempo: plan.tempo)
+        let voice = nextVoice(
+            for: plan.instrument,
+            noteNumber: noteNumber,
+            reservingFor: duration,
+            preferMatchingActiveNote: shouldCollapseDuplicateNotes(for: plan)
+        )
 
         voice.play(
             noteNumber: noteNumber,
             velocity: midiVelocity,
-            duration: profile.duration(for: plan.role)
+            duration: duration
         )
     }
 
+    func resetPerformanceState() {
+        setPedal(false, for: .piano)
+        setPedal(false, for: .loFiKeys)
+    }
+
     private func configureVoicePool() {
-        pianoVoices = makeVoices(for: .piano, count: 12)
-        loFiVoices = makeVoices(for: .loFiKeys, count: 12)
+        pianoVoices = makeVoices(for: .piano, count: 24)
+        loFiVoices = makeVoices(for: .loFiKeys, count: 24)
     }
 
     private func makeVoices(for instrument: KeyboardInstrument, count: Int) -> [SamplerVoice] {
@@ -88,11 +119,19 @@ final class KeyboardSynthPlayer {
         }
     }
 
-    private func nextVoice(for instrument: KeyboardInstrument) -> SamplerVoice {
+    private func nextVoice(
+        for instrument: KeyboardInstrument,
+        noteNumber: UInt8,
+        reservingFor duration: TimeInterval,
+        preferMatchingActiveNote: Bool
+    ) -> SamplerVoice {
+        let now = Date()
+        let reservedUntil = now.addingTimeInterval(duration)
+
         switch instrument {
         case .piano:
             if pianoVoices.isEmpty {
-                pianoVoices = makeVoices(for: .piano, count: 8)
+                pianoVoices = makeVoices(for: .piano, count: 12)
             }
             if pianoVoices.isEmpty {
                 let fallbackVoice = SamplerVoice()
@@ -100,12 +139,20 @@ final class KeyboardSynthPlayer {
                 engine.connect(fallbackVoice.sampler, to: spaceMixer, format: nil)
                 pianoVoices = [fallbackVoice]
             }
-            let index = nextPianoVoiceIndex % max(pianoVoices.count, 1)
-            nextPianoVoiceIndex = (nextPianoVoiceIndex + 1) % max(pianoVoices.count, 1)
-            return pianoVoices[index]
+            let voice = selectVoice(
+                from: pianoVoices,
+                startingAt: nextPianoVoiceIndex,
+                noteNumber: noteNumber,
+                preferMatchingActiveNote: preferMatchingActiveNote,
+                now: now
+            )
+            let currentIndex = pianoVoices.firstIndex(where: { $0 === voice }) ?? 0
+            nextPianoVoiceIndex = (currentIndex + 1) % max(pianoVoices.count, 1)
+            voice.reserve(until: reservedUntil)
+            return voice
         case .loFiKeys:
             if loFiVoices.isEmpty {
-                loFiVoices = makeVoices(for: .loFiKeys, count: 8)
+                loFiVoices = makeVoices(for: .loFiKeys, count: 12)
             }
             if loFiVoices.isEmpty {
                 let fallbackVoice = SamplerVoice()
@@ -113,10 +160,46 @@ final class KeyboardSynthPlayer {
                 engine.connect(fallbackVoice.sampler, to: spaceMixer, format: nil)
                 loFiVoices = [fallbackVoice]
             }
-            let index = nextLoFiVoiceIndex % max(loFiVoices.count, 1)
-            nextLoFiVoiceIndex = (nextLoFiVoiceIndex + 1) % max(loFiVoices.count, 1)
-            return loFiVoices[index]
+            let voice = selectVoice(
+                from: loFiVoices,
+                startingAt: nextLoFiVoiceIndex,
+                noteNumber: noteNumber,
+                preferMatchingActiveNote: preferMatchingActiveNote,
+                now: now
+            )
+            let currentIndex = loFiVoices.firstIndex(where: { $0 === voice }) ?? 0
+            nextLoFiVoiceIndex = (currentIndex + 1) % max(loFiVoices.count, 1)
+            voice.reserve(until: reservedUntil)
+            return voice
         }
+    }
+
+    private func selectVoice(
+        from voices: [SamplerVoice],
+        startingAt startIndex: Int,
+        noteNumber: UInt8,
+        preferMatchingActiveNote: Bool,
+        now: Date
+    ) -> SamplerVoice {
+        let rotated = rotatedVoices(from: voices, startingAt: startIndex)
+        if preferMatchingActiveNote,
+           let matchingVoice = rotated.first(where: { $0.isPlaying(noteNumber: noteNumber, at: now) }) {
+            return matchingVoice
+        }
+        if let availableVoice = rotated.first(where: { $0.isAvailable(at: now) }) {
+            return availableVoice
+        }
+
+        return rotated.min { lhs, rhs in
+            lhs.reservedUntil < rhs.reservedUntil
+        } ?? voices[0]
+    }
+
+    private func rotatedVoices(from voices: [SamplerVoice], startingAt startIndex: Int) -> [SamplerVoice] {
+        guard !voices.isEmpty else { return [] }
+
+        let index = startIndex % voices.count
+        return Array(voices[index...] + voices[..<index])
     }
 
     private func startEngineIfNeeded() {
@@ -129,36 +212,118 @@ final class KeyboardSynthPlayer {
         }
     }
 
-    private func configureEffects(for instrument: KeyboardInstrument) {
-        guard currentEffectProfile != instrument else { return }
-
-        switch instrument {
-        case .piano:
-            reverb.loadFactoryPreset(.smallRoom)
-            reverb.wetDryMix = 11
-            delay.delayTime = 0
-            delay.feedback = 0
-            delay.lowPassCutoff = 12_000
-            delay.wetDryMix = 0
-        case .loFiKeys:
-            reverb.loadFactoryPreset(.mediumChamber)
-            reverb.wetDryMix = 18
-            delay.delayTime = 0.09
-            delay.feedback = 7
-            delay.lowPassCutoff = 4_200
-            delay.wetDryMix = 10
+    private func applyPhrasePedal(for plan: SoundTriggerPlan) {
+        if plan.instrument != .piano {
+            setPedal(false, for: .piano)
+            return
         }
 
-        currentEffectProfile = instrument
+        setPedal(plan.sustainPedalEngaged, for: .piano)
     }
+
+    private func setPedal(_ isEngaged: Bool, for instrument: KeyboardInstrument) {
+        switch instrument {
+        case .piano:
+            guard pianoPedalEngaged != isEngaged else { return }
+            pianoPedalEngaged = isEngaged
+            sendController(64, value: isEngaged ? 127 : 0, to: pianoVoices)
+        case .loFiKeys:
+            guard loFiPedalEngaged != isEngaged else { return }
+            loFiPedalEngaged = isEngaged
+            sendController(64, value: isEngaged ? 127 : 0, to: loFiVoices)
+        }
+    }
+
+    private func sendController(_ controller: UInt8, value: UInt8, to voices: [SamplerVoice]) {
+        for voice in voices {
+            voice.sampler.sendController(controller, withValue: value, onChannel: 0)
+        }
+    }
+
+    private func shouldCollapseDuplicateNotes(for plan: SoundTriggerPlan) -> Bool {
+        guard plan.instrument == .piano else {
+            return false
+        }
+
+        switch plan.performanceStyle {
+        case .mellow, .warm:
+            return false
+        case .bright, .driving, .stormy:
+            return true
+        }
+    }
+
+    private func configureEffects(for plan: SoundTriggerPlan) {
+        let effectProfile = EffectProfileKey(
+            instrument: plan.instrument,
+            performanceStyle: plan.performanceStyle
+        )
+        guard currentEffectProfile != effectProfile else { return }
+
+        switch plan.instrument {
+        case .piano:
+            configurePianoEffects(for: plan.performanceStyle)
+        case .loFiKeys:
+            configureLoFiEffects()
+        }
+
+        currentEffectProfile = effectProfile
+    }
+
+    private func configureEQ(_ configurations: [EQBandConfiguration]) {
+        for (band, configuration) in zip(toneEQ.bands, configurations) {
+            band.filterType = configuration.filterType
+            band.frequency = configuration.frequency
+            band.bandwidth = configuration.bandwidth
+            band.gain = configuration.gain
+            band.bypass = false
+        }
+    }
+
+    private func configurePianoEffects(for performanceStyle: KeyboardPerformanceStyle) {
+        applyEffectConfiguration(PianoPlaybackProfile.effectConfiguration(for: performanceStyle))
+    }
+
+    private func configureLoFiEffects() {
+        configureEQ([
+            EQBandConfiguration(filterType: .parametric, frequency: 150, bandwidth: 0.9, gain: 1.2),
+            EQBandConfiguration(filterType: .parametric, frequency: 3_200, bandwidth: 1.2, gain: -1.8),
+            EQBandConfiguration(filterType: .parametric, frequency: 6_100, bandwidth: 0.8, gain: -1.4)
+        ])
+        reverb.loadFactoryPreset(.mediumChamber)
+        reverb.wetDryMix = 22
+        delay.delayTime = 0.09
+        delay.feedback = 7
+        delay.lowPassCutoff = 4_200
+        delay.wetDryMix = 8
+        spaceMixer.outputVolume = 0.94
+        engine.mainMixerNode.outputVolume = 0.88
+    }
+
+    private func applyEffectConfiguration(_ configuration: InstrumentEffectConfiguration) {
+        configureEQ(configuration.eqBands)
+        reverb.loadFactoryPreset(configuration.reverbPreset)
+        reverb.wetDryMix = configuration.reverbMix
+        delay.delayTime = configuration.delayTime
+        delay.feedback = configuration.delayFeedback
+        delay.lowPassCutoff = configuration.delayLowPassCutoff
+        delay.wetDryMix = configuration.delayMix
+        spaceMixer.outputVolume = configuration.spaceVolume
+        engine.mainMixerNode.outputVolume = configuration.outputVolume
+    }
+}
+
+private struct EffectProfileKey: Equatable {
+    let instrument: KeyboardInstrument
+    let performanceStyle: KeyboardPerformanceStyle
 }
 
 private final class SamplerVoice {
     let sampler = AVAudioUnitSampler()
 
     private let stateQueue = DispatchQueue(label: "NoisyKeys.SamplerVoice")
-    private var playbackToken: UInt64 = 0
-    private var currentNote: UInt8?
+    private var reservedUntilStorage = Date.distantPast
+    private var currentNoteNumberStorage: UInt8?
 
     func load(soundBankURL: URL, program: UInt8, masterGain: Float) throws {
         try sampler.loadSoundBankInstrument(
@@ -170,22 +335,38 @@ private final class SamplerVoice {
         sampler.masterGain = masterGain
     }
 
+    var reservedUntil: Date {
+        stateQueue.sync { reservedUntilStorage }
+    }
+
+    func isAvailable(at date: Date) -> Bool {
+        reservedUntil <= date
+    }
+
+    func isPlaying(noteNumber: UInt8, at date: Date) -> Bool {
+        stateQueue.sync {
+            currentNoteNumberStorage == noteNumber && reservedUntilStorage > date
+        }
+    }
+
+    func reserve(until date: Date) {
+        stateQueue.sync {
+            reservedUntilStorage = max(reservedUntilStorage, date)
+        }
+    }
+
     func play(noteNumber: UInt8, velocity: UInt8, duration: TimeInterval) {
         stateQueue.async {
-            self.playbackToken &+= 1
-            let token = self.playbackToken
-
-            if let currentNote = self.currentNote {
-                self.sampler.stopNote(currentNote, onChannel: 0)
+            if let currentNoteNumber = self.currentNoteNumberStorage {
+                self.sampler.stopNote(currentNoteNumber, onChannel: 0)
             }
-
-            self.currentNote = noteNumber
+            self.currentNoteNumberStorage = noteNumber
             self.sampler.startNote(noteNumber, withVelocity: velocity, onChannel: 0)
 
             self.stateQueue.asyncAfter(deadline: .now() + duration) {
-                guard token == self.playbackToken, self.currentNote == noteNumber else { return }
+                guard self.currentNoteNumberStorage == noteNumber else { return }
                 self.sampler.stopNote(noteNumber, onChannel: 0)
-                self.currentNote = nil
+                self.currentNoteNumberStorage = nil
             }
         }
     }
@@ -193,15 +374,17 @@ private final class SamplerVoice {
 
 private struct InstrumentPlaybackProfile {
     let instrument: KeyboardInstrument
+    let performanceStyle: KeyboardPerformanceStyle
 
-    init(_ instrument: KeyboardInstrument) {
+    init(_ instrument: KeyboardInstrument, performanceStyle: KeyboardPerformanceStyle = .warm) {
         self.instrument = instrument
+        self.performanceStyle = performanceStyle
     }
 
     var programNumber: UInt8 {
         switch instrument {
         case .piano:
-            0
+            PianoPlaybackProfile.programNumber
         case .loFiKeys:
             4
         }
@@ -210,88 +393,102 @@ private struct InstrumentPlaybackProfile {
     var masterGain: Float {
         switch instrument {
         case .piano:
-            0
+            PianoPlaybackProfile.masterGain
         case .loFiKeys:
             -2
         }
     }
 
-    func duration(for role: KeyboardSoundRole) -> TimeInterval {
+    func duration(for role: KeyboardSoundRole, tempo: TypingTempoSnapshot) -> TimeInterval {
+        let baseDuration: TimeInterval
+
         switch instrument {
         case .piano:
-            switch role {
-            case .melody:
-                0.44
-            case .pulse:
-                0.28
-            case .cadence:
-                0.62
-            case .tension:
-                0.26
-            case .texture:
-                0.22
-            case .accent:
-                0.34
-            case .navigation:
-                0.24
-            }
+            return PianoPlaybackProfile.duration(
+                for: role,
+                tempo: tempo,
+                performanceStyle: performanceStyle
+            )
         case .loFiKeys:
             switch role {
             case .melody:
-                0.62
+                baseDuration = 0.92
             case .pulse:
-                0.34
+                baseDuration = 0.34
             case .cadence:
-                0.82
+                baseDuration = 1.14
             case .tension:
-                0.38
+                baseDuration = 0.6
             case .texture:
-                0.32
+                baseDuration = 0.56
             case .accent:
-                0.42
+                baseDuration = 0.76
             case .navigation:
-                0.3
+                baseDuration = 0.52
             }
         }
+
+        return baseDuration * durationMultiplier(for: role, tempo: tempo)
     }
 
     func roleVelocityScale(for role: KeyboardSoundRole) -> Double {
         switch instrument {
         case .piano:
-            switch role {
-            case .melody:
-                0.95
-            case .pulse:
-                0.82
-            case .cadence:
-                1
-            case .tension:
-                0.74
-            case .texture:
-                0.68
-            case .accent:
-                0.9
-            case .navigation:
-                0.66
+            return PianoPlaybackProfile.roleVelocityScale(
+                for: role,
+                performanceStyle: performanceStyle
+            )
+        case .loFiKeys:
+            return 1
+        }
+    }
+
+    private func durationMultiplier(for role: KeyboardSoundRole, tempo: TypingTempoSnapshot) -> Double {
+        let phraseMultiplier: Double
+        switch instrument {
+        case .piano:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                phraseMultiplier = 1.18
+            case .steady:
+                phraseMultiplier = 1.04
+            case .energetic:
+                phraseMultiplier = 0.98
+            case .frantic:
+                phraseMultiplier = 0.92
             }
         case .loFiKeys:
-            switch role {
-            case .melody:
-                0.88
-            case .pulse:
-                0.8
-            case .cadence:
-                0.94
-            case .tension:
-                0.72
-            case .texture:
-                0.68
-            case .accent:
-                0.84
-            case .navigation:
-                0.64
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                phraseMultiplier = 1.16
+            case .steady:
+                phraseMultiplier = 1.12
+            case .energetic:
+                phraseMultiplier = 1.24
+            case .frantic:
+                phraseMultiplier = 1.34
             }
         }
+
+        let roleBias: Double
+        switch role {
+        case .melody:
+            roleBias = 1.08
+        case .pulse:
+            roleBias = 0.76
+        case .cadence:
+            roleBias = 1.16
+        case .tension:
+            roleBias = 1
+        case .texture:
+            roleBias = 0.98
+        case .accent:
+            roleBias = 1.02
+        case .navigation:
+            roleBias = 1
+        }
+
+        return phraseMultiplier * roleBias
     }
 }
 

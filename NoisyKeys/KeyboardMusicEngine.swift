@@ -54,9 +54,27 @@ enum KeyboardInstrument: String, CaseIterable, Identifiable {
     fileprivate var bassNote: String {
         switch self {
         case .piano:
-            "C3"
+            "G3"
         case .loFiKeys:
-            "C2"
+            "C3"
+        }
+    }
+
+    fileprivate var pulseNote: String {
+        switch self {
+        case .piano:
+            "G4"
+        case .loFiKeys:
+            "G3"
+        }
+    }
+
+    fileprivate var supportPalette: [String] {
+        switch self {
+        case .piano:
+            ["C4", "D4", "E4", "G4", "A4", "C5", "E5"]
+        case .loFiKeys:
+            ["C3", "E3", "G3", "A3", "C4", "E4", "G4"]
         }
     }
 
@@ -175,6 +193,42 @@ enum KeyboardSymbol: Hashable {
             "key-\(keyCode)"
         }
     }
+
+    var learnedKeyID: String? {
+        switch self {
+        case .letter(let character):
+            String(character).lowercased()
+        default:
+            nil
+        }
+    }
+
+    var learnedKeyLabel: String? {
+        switch self {
+        case .letter(let character):
+            String(character).uppercased()
+        default:
+            nil
+        }
+    }
+
+    var contributesToBurstIdentity: Bool {
+        switch self {
+        case .letter, .number, .punctuation:
+            true
+        case .space, .tab, .returnKey, .delete, .escape, .modifier, .arrow, .unknown:
+            false
+        }
+    }
+
+    var isBurstBoundary: Bool {
+        switch self {
+        case .space, .tab, .returnKey, .punctuation:
+            true
+        case .letter, .number, .delete, .escape, .modifier, .arrow, .unknown:
+            false
+        }
+    }
 }
 
 enum KeyboardInputSource: String {
@@ -223,40 +277,245 @@ struct TypingTempoSnapshot: Equatable {
     }
 }
 
+enum TypingTextMood: String, Equatable {
+    case neutral
+    case joyful
+    case tense
+    case angry
+
+    var displayName: String {
+        rawValue.capitalized
+    }
+}
+
+enum KeyboardPerformanceStyle: String, Equatable {
+    case mellow
+    case warm
+    case bright
+    case driving
+    case stormy
+
+    var displayName: String {
+        switch self {
+        case .mellow:
+            "Mellow"
+        case .warm:
+            "Warm"
+        case .bright:
+            "Bright"
+        case .driving:
+            "Driving"
+        case .stormy:
+            "Stormy"
+        }
+    }
+
+    func summary(for instrument: KeyboardInstrument, textMood: TypingTextMood) -> String {
+        if instrument == .piano {
+            return "\(displayName) piano · \(textMood.displayName.lowercased()) tone"
+        }
+
+        return "\(instrument.displayName) · \(textMood.displayName.lowercased()) tone"
+    }
+
+    static func forInstrument(
+        _ instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        expression: TypingExpressionSnapshot
+    ) -> KeyboardPerformanceStyle {
+        guard instrument == .piano else {
+            return .warm
+        }
+
+        switch expression.textMood {
+        case .joyful:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .mellow
+            case .steady:
+                return .warm
+            case .energetic, .frantic:
+                return .bright
+            }
+        case .angry:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .driving
+            case .steady:
+                return .driving
+            case .energetic, .frantic:
+                return .stormy
+            }
+        case .tense:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .warm
+            case .steady:
+                return .driving
+            case .energetic, .frantic:
+                return .stormy
+            }
+        case .neutral:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .mellow
+            case .steady:
+                return .warm
+            case .energetic, .frantic:
+                return .driving
+            }
+        }
+    }
+}
+
+struct TypingExpressionSnapshot: Equatable {
+    let textMood: TypingTextMood
+    let recentText: String
+    let positiveScore: Double
+    let negativeScore: Double
+    let tensionScore: Double
+
+    var summary: String {
+        if recentText.isEmpty {
+            return "\(textMood.displayName) tone"
+        }
+
+        return "\(textMood.displayName) tone from \"\(recentText)\""
+    }
+}
+
 struct SoundTriggerPlan: Equatable {
     let instrument: KeyboardInstrument
     let role: KeyboardSoundRole
     let soundID: String
     let noteLabel: String
+    let noteFamilyName: String
     let keyLabel: String
     let source: KeyboardInputSource
     let tempo: TypingTempoSnapshot
+    let textMood: TypingTextMood
+    let performanceStyle: KeyboardPerformanceStyle
+    let sustainPedalEngaged: Bool
     let velocity: Double
+    let learnedRank: Int?
 
     var debugSummary: String {
-        "\(instrument.displayName) \(role.displayName) \(noteLabel) for \(keyLabel) · \(tempo.summary) · \(source.rawValue)"
+        "\(instrument.displayName) \(role.displayName) \(noteLabel) \(noteFamilyName) for \(keyLabel) · \(performanceStyle.displayName) · \(textMood.displayName) · \(tempo.summary) · \(source.rawValue)"
     }
 }
 
 struct KeyboardMusicEngine {
     var instrument: KeyboardInstrument = .piano
 
+    private var burstTracker = TypingBurstTracker()
     private var cadenceTracker = TypingCadenceTracker()
+    private var usageProfile: AdaptiveKeyLearningProfile
+    private var expressionTracker = TypingExpressionTracker()
+    private var performanceBurstLock = TypingPerformanceBurstLock()
+    private var pianoPhraseTracker = PianoPhraseTracker()
+    private var lastLeadNoteLabel: String?
     private(set) var lastTempo = TypingTempoSnapshot.idle
+    private(set) var learnedKeysSummary: String
+    private(set) var adaptiveMappingDescription: String
+    private(set) var performanceDescription: String
 
-    init(instrument: KeyboardInstrument = .piano) {
+    init(instrument: KeyboardInstrument = .piano, persistentLearning: Bool = false) {
         self.instrument = instrument
+        usageProfile = AdaptiveKeyLearningProfile(persistentLearning: persistentLearning)
+        learnedKeysSummary = usageProfile.topKeysSummary
+        adaptiveMappingDescription = usageProfile.defaultDescription
+        performanceDescription = KeyboardPerformanceStyle.warm.summary(for: instrument, textMood: .neutral)
     }
 
     mutating func plan(for input: KeyboardInput) -> SoundTriggerPlan {
+        let startsNewBurst = burstTracker.register(at: input.timestamp)
+        if startsNewBurst {
+            cadenceTracker.reset()
+            expressionTracker.reset()
+            performanceBurstLock.reset()
+            pianoPhraseTracker.reset()
+            lastLeadNoteLabel = nil
+        }
+
         let tempo = cadenceTracker.register(at: input.timestamp)
+        let usageSnapshot = usageProfile.register(symbol: input.symbol)
+        let expressionSnapshot = expressionTracker.register(symbol: input.symbol)
+        let burstPerformance = performanceBurstLock.resolve(
+            for: input.symbol,
+            instrument: instrument,
+            tempo: tempo,
+            expressionSnapshot: expressionSnapshot
+        )
+        let phraseMapping = pianoPhraseTracker.mapping(
+            for: input,
+            instrument: instrument,
+            tempo: tempo,
+            performanceStyle: burstPerformance.performanceStyle,
+            textMood: burstPerformance.textMood,
+            usageSnapshot: usageSnapshot
+        )
         lastTempo = tempo
-        return KeyboardSoundPlanner.plan(for: input, instrument: instrument, tempo: tempo)
+        let plan = KeyboardSoundPlanner.plan(
+            for: input,
+            instrument: instrument,
+            tempo: tempo,
+            textMood: burstPerformance.textMood,
+            performanceStyle: burstPerformance.performanceStyle,
+            usageSnapshot: usageSnapshot,
+            previousLeadNoteLabel: lastLeadNoteLabel,
+            mappingOverride: phraseMapping
+        )
+        if plan.role.shouldInfluenceVoiceLeading {
+            lastLeadNoteLabel = plan.noteLabel
+        }
+        learnedKeysSummary = usageProfile.topKeysSummary
+        adaptiveMappingDescription = usageProfile.description(for: input.symbol, snapshot: usageSnapshot)
+        performanceDescription = plan.performanceStyle.summary(for: instrument, textMood: plan.textMood)
+        return plan
     }
 
     func previewPlan(for symbol: KeyboardSymbol, source: KeyboardInputSource = .localApp) -> SoundTriggerPlan {
         let input = KeyboardInput(symbol: symbol, keyCode: 0, source: source, timestamp: Date())
-        return KeyboardSoundPlanner.plan(for: input, instrument: instrument, tempo: lastTempo)
+        let previewExpression = expressionTracker.preview(after: symbol)
+        let previewPerformance = performanceBurstLock.preview(
+            for: symbol,
+            instrument: instrument,
+            tempo: lastTempo,
+            expressionSnapshot: previewExpression,
+            prefersLockedBurst: burstTracker.isActive(at: input.timestamp)
+        )
+        let previewMapping = pianoPhraseTracker.previewMapping(
+            for: input,
+            instrument: instrument,
+            tempo: lastTempo,
+            performanceStyle: previewPerformance.performanceStyle,
+            textMood: previewPerformance.textMood,
+            usageSnapshot: usageProfile.snapshot(for: symbol)
+        )
+        return KeyboardSoundPlanner.plan(
+            for: input,
+            instrument: instrument,
+            tempo: lastTempo,
+            textMood: previewPerformance.textMood,
+            performanceStyle: previewPerformance.performanceStyle,
+            usageSnapshot: usageProfile.snapshot(for: symbol),
+            previousLeadNoteLabel: lastLeadNoteLabel,
+            mappingOverride: previewMapping
+        )
+    }
+
+    mutating func setInstrument(_ instrument: KeyboardInstrument) {
+        self.instrument = instrument
+        burstTracker.reset()
+        cadenceTracker.reset()
+        expressionTracker.reset()
+        performanceBurstLock.reset()
+        pianoPhraseTracker.reset()
+        lastLeadNoteLabel = nil
+        lastTempo = .idle
+        learnedKeysSummary = usageProfile.topKeysSummary
+        adaptiveMappingDescription = usageProfile.defaultDescription
+        performanceDescription = KeyboardPerformanceStyle.warm.summary(for: instrument, textMood: .neutral)
     }
 }
 
@@ -298,11 +557,11 @@ struct TypingCadenceTracker {
 
         let intensity: TypingIntensity
         switch notesPerSecond {
-        case ..<0.9:
+        case ..<1.25:
             intensity = .relaxed
-        case ..<2.2:
+        case ..<2.8:
             intensity = .steady
-        case ..<4.1:
+        case ..<4.8:
             intensity = .energetic
         default:
             intensity = .frantic
@@ -314,6 +573,397 @@ struct TypingCadenceTracker {
             beatsPerMinute: beatsPerMinute,
             intensity: intensity
         )
+    }
+
+    mutating func reset() {
+        timestamps.removeAll(keepingCapacity: true)
+    }
+}
+
+struct AdaptiveKeyUsageSnapshot: Equatable {
+    let rank: Int?
+    let count: Int
+    let topKeys: [AdaptiveKeyStat]
+}
+
+private struct TypingExpressionTracker {
+    private var history: [KeyboardSymbol] = []
+    private let maxHistory = 72
+
+    mutating func register(symbol: KeyboardSymbol) -> TypingExpressionSnapshot {
+        history.append(symbol)
+
+        if history.count > maxHistory {
+            history.removeFirst(history.count - maxHistory)
+        }
+
+        return snapshot()
+    }
+
+    func preview(after symbol: KeyboardSymbol) -> TypingExpressionSnapshot {
+        var copy = self
+        return copy.register(symbol: symbol)
+    }
+
+    mutating func reset() {
+        history.removeAll(keepingCapacity: true)
+    }
+
+    private func snapshot() -> TypingExpressionSnapshot {
+        let recentText = renderedRecentText()
+        let words = recentWords(in: recentText)
+        let deletePressure = deletePressure()
+        let positiveScore = wordScore(for: words, lexicon: Self.positiveLexicon) + joyPunctuationScore()
+        let negativeScore = wordScore(for: words, lexicon: Self.negativeLexicon) + deletePressure
+        let tensionScore = wordScore(for: words, lexicon: Self.tenseLexicon) + punctuationTensionScore() + (deletePressure * 0.8)
+
+        return TypingExpressionSnapshot(
+            textMood: inferredMood(
+                positiveScore: positiveScore,
+                negativeScore: negativeScore,
+                tensionScore: tensionScore
+            ),
+            recentText: recentText,
+            positiveScore: positiveScore,
+            negativeScore: negativeScore,
+            tensionScore: tensionScore
+        )
+    }
+
+    private func renderedRecentText() -> String {
+        var characters: [Character] = []
+
+        for symbol in history {
+            switch symbol {
+            case .letter(let character),
+                 .number(let character),
+                 .punctuation(let character):
+                characters.append(character)
+            case .space, .tab, .returnKey:
+                if characters.last != " " {
+                    characters.append(" ")
+                }
+            case .delete:
+                if !characters.isEmpty {
+                    characters.removeLast()
+                }
+            case .escape, .modifier, .arrow, .unknown:
+                continue
+            }
+        }
+
+        return String(characters)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func recentWords(in text: String) -> [String] {
+        Array(
+            text
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                .map { String($0).lowercased() }
+                .suffix(6)
+        )
+    }
+
+    private func wordScore(for words: [String], lexicon: [String: Double]) -> Double {
+        words.reduce(0) { partialResult, word in
+            partialResult + (lexicon[word] ?? 0)
+        }
+    }
+
+    private func joyPunctuationScore() -> Double {
+        let exclamationCount = history.reduce(into: 0) { count, symbol in
+            if case .punctuation("!") = symbol {
+                count += 1
+            }
+        }
+
+        return min(Double(exclamationCount) * 0.18, 0.54)
+    }
+
+    private func deletePressure() -> Double {
+        let deleteCount = history.reduce(into: 0) { count, symbol in
+            if case .delete = symbol {
+                count += 1
+            }
+        }
+
+        return min(Double(deleteCount) * 0.32, 1.28)
+    }
+
+    private func punctuationTensionScore() -> Double {
+        history.reduce(0) { score, symbol in
+            switch symbol {
+            case .punctuation("?"):
+                score + 0.42
+            case .punctuation("!"):
+                score + 0.18
+            case .punctuation(":"),
+                 .punctuation(";"):
+                score + 0.08
+            default:
+                score
+            }
+        }
+    }
+
+    private func inferredMood(
+        positiveScore: Double,
+        negativeScore: Double,
+        tensionScore: Double
+    ) -> TypingTextMood {
+        if negativeScore >= max(1.55, positiveScore + 0.4) {
+            return .angry
+        }
+
+        if positiveScore >= max(1.15, negativeScore + 0.25),
+           positiveScore >= tensionScore * 0.72 {
+            return .joyful
+        }
+
+        if tensionScore >= 1.05 || negativeScore >= 0.95 {
+            return negativeScore >= 1.35 ? .angry : .tense
+        }
+
+        return .neutral
+    }
+
+    private static let positiveLexicon: [String: Double] = [
+        "awesome": 1.5,
+        "cool": 1.1,
+        "fun": 1.0,
+        "good": 1.1,
+        "great": 1.3,
+        "haha": 1.4,
+        "happy": 1.4,
+        "love": 1.6,
+        "lol": 1.2,
+        "nice": 1.0,
+        "perfect": 1.5,
+        "sweet": 1.0,
+        "wow": 1.1,
+        "yay": 1.4,
+        "yes": 0.8
+    ]
+
+    private static let negativeLexicon: [String: Double] = [
+        "angry": 1.5,
+        "annoying": 1.6,
+        "awful": 1.6,
+        "bad": 1.1,
+        "broken": 1.1,
+        "damn": 1.2,
+        "fuck": 1.7,
+        "hate": 1.6,
+        "mad": 1.3,
+        "no": 0.8,
+        "shit": 1.5,
+        "stop": 0.9,
+        "stupid": 1.5,
+        "ugh": 1.2
+    ]
+
+    private static let tenseLexicon: [String: Double] = [
+        "cant": 1.0,
+        "could": 0.6,
+        "dont": 1.0,
+        "fix": 0.7,
+        "issue": 0.9,
+        "maybe": 0.7,
+        "need": 0.5,
+        "not": 0.9,
+        "problem": 1.1,
+        "should": 0.7,
+        "wait": 0.7,
+        "what": 0.6,
+        "weird": 0.8,
+        "why": 1.0,
+        "wrong": 1.0
+    ]
+}
+
+private struct TypingBurstTracker {
+    private static let idleResetInterval: TimeInterval = 3
+
+    private var lastTimestamp: Date?
+
+    mutating func register(at timestamp: Date) -> Bool {
+        defer { lastTimestamp = timestamp }
+
+        guard let lastTimestamp else {
+            return true
+        }
+
+        return timestamp.timeIntervalSince(lastTimestamp) >= Self.idleResetInterval
+    }
+
+    func isActive(at timestamp: Date) -> Bool {
+        guard let lastTimestamp else {
+            return false
+        }
+
+        return timestamp.timeIntervalSince(lastTimestamp) < Self.idleResetInterval
+    }
+
+    mutating func reset() {
+        lastTimestamp = nil
+    }
+}
+
+private struct TypingBurstPerformance: Equatable {
+    let textMood: TypingTextMood
+    let performanceStyle: KeyboardPerformanceStyle
+}
+
+private struct TypingPerformanceBurstLock {
+    private var lockedPerformance: TypingBurstPerformance?
+    private var meaningfulEventCount = 0
+
+    mutating func resolve(
+        for symbol: KeyboardSymbol,
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        expressionSnapshot: TypingExpressionSnapshot
+    ) -> TypingBurstPerformance {
+        if symbol.contributesToBurstIdentity {
+            meaningfulEventCount += 1
+        }
+
+        if let lockedPerformance {
+            return lockedPerformance
+        }
+
+        let livePerformance = TypingBurstPerformance(
+            textMood: expressionSnapshot.textMood,
+            performanceStyle: KeyboardPerformanceStyle.forInstrument(
+                instrument,
+                tempo: tempo,
+                expression: expressionSnapshot
+            )
+        )
+
+        if shouldLock(after: symbol) {
+            lockedPerformance = livePerformance
+        }
+
+        return livePerformance
+    }
+
+    func preview(
+        for symbol: KeyboardSymbol,
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        expressionSnapshot: TypingExpressionSnapshot,
+        prefersLockedBurst: Bool
+    ) -> TypingBurstPerformance {
+        if prefersLockedBurst, let lockedPerformance {
+            return lockedPerformance
+        }
+
+        return TypingBurstPerformance(
+            textMood: expressionSnapshot.textMood,
+            performanceStyle: KeyboardPerformanceStyle.forInstrument(
+                instrument,
+                tempo: tempo,
+                expression: expressionSnapshot
+            )
+        )
+    }
+
+    mutating func reset() {
+        lockedPerformance = nil
+        meaningfulEventCount = 0
+    }
+
+    private func shouldLock(after symbol: KeyboardSymbol) -> Bool {
+        meaningfulEventCount >= 4 || (symbol.isBurstBoundary && meaningfulEventCount >= 2)
+    }
+}
+
+struct AdaptiveKeyStat: Equatable {
+    let id: String
+    let label: String
+    let count: Int
+}
+
+private struct AdaptiveKeyLearningProfile {
+    private static let defaultsKey = "keyboardMusic.adaptiveLetterUsage.v1"
+
+    private var counts: [String: Int]
+    private let defaults: UserDefaults?
+
+    init(persistentLearning: Bool) {
+        defaults = persistentLearning ? .standard : nil
+        counts = (defaults?.dictionary(forKey: Self.defaultsKey) ?? [:]).reduce(into: [:]) { partialResult, element in
+            if let count = element.value as? Int {
+                partialResult[element.key] = count
+            }
+        }
+    }
+
+    var topKeysSummary: String {
+        let top = Array(rankedKeys.prefix(5))
+        guard !top.isEmpty else {
+            return "Learning your letter habits."
+        }
+
+        return top
+            .map { "\($0.label)\($0.count)" }
+            .joined(separator: " · ")
+    }
+
+    var defaultDescription: String {
+        "Frequent letters get the home/open/lift tones. Rare letters become color and tension."
+    }
+
+    mutating func register(symbol: KeyboardSymbol) -> AdaptiveKeyUsageSnapshot {
+        if let learnedKeyID = symbol.learnedKeyID {
+            counts[learnedKeyID, default: 0] += 1
+            persistIfNeeded()
+        }
+
+        return snapshot(for: symbol)
+    }
+
+    func snapshot(for symbol: KeyboardSymbol) -> AdaptiveKeyUsageSnapshot {
+        let topKeys = Array(rankedKeys.prefix(5))
+        let rank = symbol.learnedKeyID.flatMap { learnedKeyID in
+            rankedKeys.firstIndex { $0.id == learnedKeyID }
+        }
+        let count = symbol.learnedKeyID.flatMap { counts[$0] } ?? 0
+        return AdaptiveKeyUsageSnapshot(rank: rank, count: count, topKeys: topKeys)
+    }
+
+    func description(for symbol: KeyboardSymbol, snapshot: AdaptiveKeyUsageSnapshot) -> String {
+        guard let label = symbol.learnedKeyLabel,
+              let rank = snapshot.rank else {
+            return defaultDescription
+        }
+
+        let family = AdaptiveNoteFamily.family(forRank: rank)
+        return "\(label) is learned as your #\(rank + 1) letter, so it leans on \(family.displayName.lowercased()) tones."
+    }
+
+    private var rankedKeys: [AdaptiveKeyStat] {
+        counts
+            .map { key, count in
+                AdaptiveKeyStat(
+                    id: key,
+                    label: key.uppercased(),
+                    count: count
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count {
+                    return lhs.count > rhs.count
+                }
+
+                return lhs.label < rhs.label
+            }
+    }
+
+    private func persistIfNeeded() {
+        defaults?.set(counts, forKey: Self.defaultsKey)
     }
 }
 
@@ -489,9 +1139,21 @@ private enum KeyboardSoundPlanner {
     static func plan(
         for input: KeyboardInput,
         instrument: KeyboardInstrument,
-        tempo: TypingTempoSnapshot
+        tempo: TypingTempoSnapshot,
+        textMood: TypingTextMood,
+        performanceStyle: KeyboardPerformanceStyle,
+        usageSnapshot: AdaptiveKeyUsageSnapshot,
+        previousLeadNoteLabel: String?,
+        mappingOverride: SoundMapping? = nil
     ) -> SoundTriggerPlan {
-        let mapping = mapping(for: input.symbol, instrument: instrument)
+        let mapping = mappingOverride ?? mapping(
+            for: input,
+            instrument: instrument,
+            tempo: tempo,
+            performanceStyle: performanceStyle,
+            usageSnapshot: usageSnapshot,
+            previousLeadNoteLabel: previousLeadNoteLabel
+        )
         let soundID = makeSoundID(
             instrument: instrument,
             role: mapping.role,
@@ -504,61 +1166,460 @@ private enum KeyboardSoundPlanner {
             role: mapping.role,
             soundID: soundID,
             noteLabel: mapping.noteLabel,
+            noteFamilyName: mapping.noteFamilyName,
             keyLabel: input.symbol.label,
             source: input.source,
             tempo: tempo,
-            velocity: mapping.velocity(for: tempo)
+            textMood: textMood,
+            performanceStyle: performanceStyle,
+            sustainPedalEngaged: sustainPedalEngaged(
+                for: input.symbol,
+                instrument: instrument,
+                tempo: tempo,
+                performanceStyle: performanceStyle
+            ),
+            velocity: mapping.velocity(for: tempo, performanceStyle: performanceStyle),
+            learnedRank: mapping.learnedRank
         )
     }
 
-    private static func mapping(for symbol: KeyboardSymbol, instrument: KeyboardInstrument) -> SoundMapping {
+    private static func sustainPedalEngaged(
+        for symbol: KeyboardSymbol,
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle
+    ) -> Bool {
+        guard instrument == .piano else {
+            return false
+        }
+
         switch symbol {
+        case .delete, .escape, .returnKey, .punctuation:
+            return false
+        case .modifier, .arrow:
+            return false
+        case .tab:
+            return tempo.intensity == .relaxed && performanceStyle == .mellow
+        case .space:
+            switch performanceStyle {
+            case .mellow, .warm:
+                return tempo.intensity == .relaxed || tempo.intensity == .steady
+            case .bright:
+                return tempo.intensity == .steady && (tempo.averageInterval ?? 0.5) > 0.32
+            case .driving, .stormy:
+                return false
+            }
+        case .letter, .number, .unknown:
+            switch performanceStyle {
+            case .mellow:
+                return true
+            case .warm:
+                return tempo.intensity != .frantic
+            case .bright:
+                return tempo.intensity == .steady && (tempo.averageInterval ?? 0.5) > 0.28
+            case .driving, .stormy:
+                return false
+            }
+        }
+    }
+
+    private static func mapping(
+        for input: KeyboardInput,
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle,
+        usageSnapshot: AdaptiveKeyUsageSnapshot,
+        previousLeadNoteLabel: String?
+    ) -> SoundMapping {
+        switch input.symbol {
         case .letter(let character):
-            let index = alphabetIndex(for: character)
+            let learnedRank = usageSnapshot.rank ?? alphabetIndex(for: character)
+            let family = AdaptiveNoteFamily.family(forRank: learnedRank)
             return SoundMapping(
                 role: .melody,
-                noteLabel: instrument.melodicPalette[index % instrument.melodicPalette.count],
-                baseVelocity: 0.72
+                noteLabel: adaptiveNoteLabel(
+                    family: family,
+                    instrument: instrument,
+                    keyCode: input.keyCode,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: family.displayName,
+                learnedRank: usageSnapshot.rank
             )
         case .number(let character):
             let index = numberIndex(for: character)
             return SoundMapping(
                 role: .accent,
-                noteLabel: instrument.accentPalette[index % instrument.accentPalette.count],
-                baseVelocity: 0.84
+                noteLabel: nearbyPaletteNote(
+                    in: instrument.accentPalette,
+                    preferredIndex: index,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Accent",
+                learnedRank: nil
             )
         case .punctuation(let character):
             let index = punctuationIndex(for: character)
             return SoundMapping(
                 role: .cadence,
-                noteLabel: instrument.accentPalette[index % instrument.accentPalette.count],
-                baseVelocity: 0.78
+                noteLabel: nearbyPaletteNote(
+                    in: instrument.accentPalette,
+                    preferredIndex: index,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Cadence",
+                learnedRank: nil
             )
         case .space:
-            return SoundMapping(role: .pulse, noteLabel: instrument.bassNote, baseVelocity: 0.65)
+            return SoundMapping(
+                role: .pulse,
+                noteLabel: dynamicPulseNote(
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: pulseFamilyName(for: tempo),
+                learnedRank: nil
+            )
         case .returnKey:
-            return SoundMapping(role: .cadence, noteLabel: instrument.accentPalette.last ?? "C4", baseVelocity: 0.92)
+            return SoundMapping(
+                role: .cadence,
+                noteLabel: nearbyPaletteNote(
+                    in: instrument.accentPalette,
+                    preferredIndex: instrument.accentPalette.count - 1,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Cadence",
+                learnedRank: nil
+            )
         case .delete, .escape:
-            return SoundMapping(role: .tension, noteLabel: instrument.tensionNote, baseVelocity: 0.76)
+            return SoundMapping(
+                role: .tension,
+                noteLabel: instrument.tensionNote,
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Tension",
+                learnedRank: nil
+            )
         case .tab:
-            return SoundMapping(role: .texture, noteLabel: instrument.textureNote, baseVelocity: 0.61)
+            return SoundMapping(
+                role: .texture,
+                noteLabel: nearbyPaletteNote(
+                    in: [instrument.textureNote] + instrument.accentPalette,
+                    preferredIndex: 0,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Texture",
+                learnedRank: nil
+            )
         case .modifier(let modifier):
             let modifierIndex = modifierIndex(for: modifier)
             return SoundMapping(
                 role: .texture,
-                noteLabel: instrument.accentPalette[modifierIndex % instrument.accentPalette.count],
-                baseVelocity: 0.57
+                noteLabel: nearbyPaletteNote(
+                    in: instrument.accentPalette,
+                    preferredIndex: modifierIndex,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Texture",
+                learnedRank: nil
             )
         case .arrow(let arrow):
             let arrowIndex = arrowIndex(for: arrow)
             return SoundMapping(
                 role: .navigation,
-                noteLabel: instrument.melodicPalette[arrowIndex % instrument.melodicPalette.count],
-                baseVelocity: 0.58
+                noteLabel: nearbyPaletteNote(
+                    in: instrument.melodicPalette,
+                    preferredIndex: arrowIndex,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Navigation",
+                learnedRank: nil
             )
         case .unknown:
-            return SoundMapping(role: .accent, noteLabel: instrument.accentPalette.first ?? "C4", baseVelocity: 0.7)
+            return SoundMapping(
+                role: .accent,
+                noteLabel: nearbyPaletteNote(
+                    in: instrument.accentPalette,
+                    preferredIndex: 0,
+                    instrument: instrument,
+                    tempo: tempo,
+                    performanceStyle: performanceStyle,
+                    previousLeadNoteLabel: previousLeadNoteLabel
+                ),
+                baseVelocity: normalizedVelocity,
+                noteFamilyName: "Accent",
+                learnedRank: nil
+            )
         }
+    }
+
+    private static func adaptiveNoteLabel(
+        family: AdaptiveNoteFamily,
+        instrument: KeyboardInstrument,
+        keyCode: UInt16,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle,
+        previousLeadNoteLabel: String?
+    ) -> String {
+        let candidates = family.noteLabels(for: instrument, performanceStyle: performanceStyle)
+        guard !candidates.isEmpty else {
+            return instrument.melodicPalette.first ?? "C4"
+        }
+
+        let anchorMidi = preferredAnchorMidi(
+            for: keyCode,
+            instrument: instrument,
+            tempo: tempo,
+            performanceStyle: performanceStyle
+        )
+        let previousMidi = previousLeadNoteLabel
+            .flatMap { KeyboardNoteFrequency.midiNote(for: $0) }
+            .map(Int.init)
+
+        return candidates.min { lhs, rhs in
+            noteSelectionScore(
+                for: lhs,
+                anchorMidi: anchorMidi,
+                tempo: tempo,
+                performanceStyle: performanceStyle,
+                previousMidi: previousMidi
+            ) < noteSelectionScore(
+                for: rhs,
+                anchorMidi: anchorMidi,
+                tempo: tempo,
+                performanceStyle: performanceStyle,
+                previousMidi: previousMidi
+            )
+        } ?? candidates[0]
+    }
+
+    private static func dynamicPulseNote(
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle,
+        previousLeadNoteLabel: String?
+    ) -> String {
+        let palette = instrument.supportPalette
+        guard let previousLeadNoteLabel,
+              let previousMidi = KeyboardNoteFrequency.midiNote(for: previousLeadNoteLabel).map(Int.init) else {
+            return defaultPulseNote(
+                in: palette,
+                performanceStyle: performanceStyle,
+                fallback: instrument.pulseNote
+            )
+        }
+
+        let sortedPalette = palette.sorted {
+            (KeyboardNoteFrequency.midiNote(for: $0).map(Int.init) ?? previousMidi) <
+            (KeyboardNoteFrequency.midiNote(for: $1).map(Int.init) ?? previousMidi)
+        }
+
+        switch performanceStyle {
+        case .mellow:
+            return directionalPaletteNote(
+                in: sortedPalette,
+                previousMidi: previousMidi,
+                direction: .down,
+                allowSamePitch: true
+            ) ?? sortedPalette.first ?? instrument.pulseNote
+        case .warm:
+            return nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+        case .bright:
+            return directionalPaletteNote(
+                in: sortedPalette,
+                previousMidi: previousMidi,
+                direction: .up,
+                allowSamePitch: true
+            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+        case .driving:
+            return directionalPaletteNote(
+                in: sortedPalette,
+                previousMidi: previousMidi,
+                direction: .up,
+                allowSamePitch: false
+            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+        case .stormy:
+            return directionalPaletteNote(
+                in: sortedPalette,
+                previousMidi: previousMidi,
+                direction: .down,
+                allowSamePitch: false
+            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+        }
+    }
+
+    private static func pulseFamilyName(for tempo: TypingTempoSnapshot) -> String {
+        switch tempo.intensity {
+        case .idle, .relaxed:
+            "Mellow Pulse"
+        case .steady:
+            "Phrase Pulse"
+        case .energetic, .frantic:
+            "Drive Pulse"
+        }
+    }
+
+    private static func nearbyPaletteNote(
+        in palette: [String],
+        preferredIndex: Int,
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle,
+        previousLeadNoteLabel: String?
+    ) -> String {
+        guard !palette.isEmpty else {
+            return "C4"
+        }
+
+        let normalizedIndex = ((preferredIndex % palette.count) + palette.count) % palette.count
+        guard let previousLeadNoteLabel,
+              let previousMidi = KeyboardNoteFrequency.midiNote(for: previousLeadNoteLabel).map(Int.init) else {
+            return palette[normalizedIndex]
+        }
+
+        let candidateIndices = orderedUniqueIndices([
+            normalizedIndex - 1,
+            normalizedIndex,
+            normalizedIndex + 1
+        ], count: palette.count)
+        let candidates = candidateIndices.map { palette[$0] }
+        let anchorMidi = KeyboardNoteFrequency.midiNote(for: palette[normalizedIndex]).map(Int.init) ??
+            preferredAnchorMidi(
+                for: 0,
+                instrument: instrument,
+                tempo: tempo,
+                performanceStyle: performanceStyle
+            )
+
+        return candidates.min { lhs, rhs in
+            noteSelectionScore(
+                for: lhs,
+                anchorMidi: anchorMidi,
+                tempo: tempo,
+                performanceStyle: performanceStyle,
+                previousMidi: previousMidi
+            ) < noteSelectionScore(
+                for: rhs,
+                anchorMidi: anchorMidi,
+                tempo: tempo,
+                performanceStyle: performanceStyle,
+                previousMidi: previousMidi
+            )
+        } ?? palette[normalizedIndex]
+    }
+
+    private static func noteSelectionScore(
+        for noteLabel: String,
+        anchorMidi: Int,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle,
+        previousMidi: Int?
+    ) -> Double {
+        let midi = KeyboardNoteFrequency.midiNote(for: noteLabel).map(Int.init) ?? anchorMidi
+        let anchorDistance = abs(Double(midi - anchorMidi))
+        let previousDistance = previousMidi.map { abs(Double(midi - $0)) } ?? 0
+        let movement = selectionMovement(for: tempo.intensity, performanceStyle: performanceStyle)
+        let repeatPenalty = previousMidi == midi ? movement.repeatPenalty : 0
+
+        if previousMidi == nil {
+            return anchorDistance + movement.registerBias(for: midi, anchorMidi: anchorMidi)
+        }
+
+        return (previousDistance * movement.previousWeight) +
+            (anchorDistance * movement.anchorWeight) +
+            repeatPenalty +
+            movement.registerBias(for: midi, anchorMidi: anchorMidi)
+    }
+
+    private static func selectionMovement(
+        for intensity: TypingIntensity,
+        performanceStyle: KeyboardPerformanceStyle
+    ) -> SelectionMovementProfile {
+        switch intensity {
+        case .idle, .relaxed:
+            SelectionMovementProfile(
+                previousWeight: 1.05,
+                anchorWeight: 0.45,
+                repeatPenalty: 0.18,
+                registerPreference: .settle
+            ).adjusted(for: performanceStyle)
+        case .steady:
+            SelectionMovementProfile(
+                previousWeight: 0.88,
+                anchorWeight: 0.34,
+                repeatPenalty: 0.1,
+                registerPreference: .neutral
+            ).adjusted(for: performanceStyle)
+        case .energetic:
+            SelectionMovementProfile(
+                previousWeight: 0.72,
+                anchorWeight: 0.28,
+                repeatPenalty: 0.04,
+                registerPreference: .lift
+            ).adjusted(for: performanceStyle)
+        case .frantic:
+            SelectionMovementProfile(
+                previousWeight: 0.62,
+                anchorWeight: 0.24,
+                repeatPenalty: 0,
+                registerPreference: .lift
+            ).adjusted(for: performanceStyle)
+        }
+    }
+
+    private static func preferredAnchorMidi(
+        for keyCode: UInt16,
+        instrument: KeyboardInstrument,
+        tempo: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle
+    ) -> Int {
+        let baseMidi: Int
+        switch instrument {
+        case .piano:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                baseMidi = 61
+            case .steady:
+                baseMidi = 63
+            case .energetic:
+                baseMidi = 65
+            case .frantic:
+                baseMidi = 66
+            }
+        case .loFiKeys:
+            baseMidi = 57
+        }
+        let column = KeyboardSpatialLayout.column(for: keyCode)
+        return baseMidi + performanceRegisterOffset(for: instrument, performanceStyle: performanceStyle) + (column - 5)
     }
 
     private static func makeSoundID(
@@ -614,29 +1675,385 @@ private enum KeyboardSoundPlanner {
             3
         }
     }
+
+    private static func orderedUniqueIndices(_ indices: [Int], count: Int) -> [Int] {
+        var seen = Set<Int>()
+        return indices.compactMap { index in
+            let normalized = ((index % count) + count) % count
+            guard seen.insert(normalized).inserted else {
+                return nil
+            }
+            return normalized
+        }
+    }
+
+    private static func nearestPaletteNote(in palette: [String], toMidi midi: Int) -> String? {
+        palette.min { lhs, rhs in
+            let lhsMidi = KeyboardNoteFrequency.midiNote(for: lhs).map(Int.init) ?? midi
+            let rhsMidi = KeyboardNoteFrequency.midiNote(for: rhs).map(Int.init) ?? midi
+            let lhsDistance = abs(lhsMidi - midi)
+            let rhsDistance = abs(rhsMidi - midi)
+
+            if lhsDistance != rhsDistance {
+                return lhsDistance < rhsDistance
+            }
+
+            return lhs < rhs
+        }
+    }
+
+    private static func directionalPaletteNote(
+        in palette: [String],
+        previousMidi: Int,
+        direction: MovementDirection,
+        allowSamePitch: Bool
+    ) -> String? {
+        palette.first { noteLabel in
+            let midi = KeyboardNoteFrequency.midiNote(for: noteLabel).map(Int.init) ?? previousMidi
+
+            switch direction {
+            case .down:
+                return allowSamePitch ? midi <= previousMidi : midi < previousMidi
+            case .up:
+                return allowSamePitch ? midi >= previousMidi : midi > previousMidi
+            }
+        }
+    }
+
+    private static func defaultPulseNote(
+        in palette: [String],
+        performanceStyle: KeyboardPerformanceStyle,
+        fallback: String
+    ) -> String {
+        guard !palette.isEmpty else { return fallback }
+
+        switch performanceStyle {
+        case .mellow:
+            return palette[max(0, (palette.count / 2) - 1)]
+        case .warm:
+            return palette[palette.count / 2]
+        case .bright, .driving:
+            return palette[min(palette.count - 1, (palette.count / 2) + 1)]
+        case .stormy:
+            return palette[max(0, (palette.count / 2) - 2)]
+        }
+    }
+
+    private static func performanceRegisterOffset(
+        for instrument: KeyboardInstrument,
+        performanceStyle: KeyboardPerformanceStyle
+    ) -> Int {
+        guard instrument == .piano else {
+            return 0
+        }
+
+        switch performanceStyle {
+        case .mellow:
+            return -1
+        case .warm:
+            return 0
+        case .bright:
+            return 2
+        case .driving:
+            return 1
+        case .stormy:
+            return -1
+        }
+    }
+
+    private static let normalizedVelocity = 0.72
 }
 
-private struct SoundMapping {
+struct SoundMapping {
     let role: KeyboardSoundRole
     let noteLabel: String
     let baseVelocity: Double
+    let noteFamilyName: String
+    let learnedRank: Int?
 
-    func velocity(for tempo: TypingTempoSnapshot) -> Double {
-        let intensityBoost: Double
-        switch tempo.intensity {
-        case .idle:
-            intensityBoost = 0
-        case .relaxed:
-            intensityBoost = 0.03
-        case .steady:
-            intensityBoost = 0.08
-        case .energetic:
-            intensityBoost = 0.13
-        case .frantic:
-            intensityBoost = 0.18
+    func velocity(for _: TypingTempoSnapshot, performanceStyle: KeyboardPerformanceStyle) -> Double {
+        let styleScale: Double
+        switch performanceStyle {
+        case .mellow:
+            styleScale = 0.86
+        case .warm:
+            styleScale = 0.94
+        case .bright:
+            styleScale = 1
+        case .driving:
+            styleScale = 1.08
+        case .stormy:
+            styleScale = 1.16
         }
 
-        return min(baseVelocity + intensityBoost, 1)
+        return min(max(baseVelocity * styleScale, 0.16), 1)
+    }
+}
+
+private struct SelectionMovementProfile {
+    enum RegisterPreference {
+        case settle
+        case neutral
+        case lift
+    }
+
+    let previousWeight: Double
+    let anchorWeight: Double
+    let repeatPenalty: Double
+    let registerPreference: RegisterPreference
+
+    func registerBias(for midi: Int, anchorMidi: Int) -> Double {
+        let offset = Double(midi - anchorMidi)
+
+        switch registerPreference {
+        case .settle:
+            return max(offset, 0) * 0.16
+        case .neutral:
+            return abs(offset) * 0.03
+        case .lift:
+            return max(-offset, 0) * 0.14
+        }
+    }
+
+    func adjusted(for performanceStyle: KeyboardPerformanceStyle) -> SelectionMovementProfile {
+        switch performanceStyle {
+        case .mellow:
+            SelectionMovementProfile(
+                previousWeight: previousWeight + 0.14,
+                anchorWeight: anchorWeight + 0.04,
+                repeatPenalty: repeatPenalty * 0.55,
+                registerPreference: .settle
+            )
+        case .warm:
+            self
+        case .bright:
+            SelectionMovementProfile(
+                previousWeight: max(previousWeight - 0.06, 0.1),
+                anchorWeight: anchorWeight + 0.03,
+                repeatPenalty: repeatPenalty * 0.8,
+                registerPreference: .lift
+            )
+        case .driving:
+            SelectionMovementProfile(
+                previousWeight: max(previousWeight - 0.12, 0.1),
+                anchorWeight: max(anchorWeight - 0.02, 0.08),
+                repeatPenalty: repeatPenalty * 0.55,
+                registerPreference: .lift
+            )
+        case .stormy:
+            SelectionMovementProfile(
+                previousWeight: max(previousWeight - 0.04, 0.1),
+                anchorWeight: anchorWeight + 0.06,
+                repeatPenalty: repeatPenalty * 0.7,
+                registerPreference: .settle
+            )
+        }
+    }
+}
+
+private enum MovementDirection {
+    case down
+    case up
+}
+
+enum AdaptiveNoteFamily {
+    case home
+    case open
+    case lift
+    case warmth
+    case color
+    case spark
+    case tension
+
+    var displayName: String {
+        switch self {
+        case .home:
+            "Home"
+        case .open:
+            "Open"
+        case .lift:
+            "Lift"
+        case .warmth:
+            "Warmth"
+        case .color:
+            "Color"
+        case .spark:
+            "Spark"
+        case .tension:
+            "Tension"
+        }
+    }
+
+    static func family(forRank rank: Int) -> AdaptiveNoteFamily {
+        let order: [AdaptiveNoteFamily] = [
+            .home,
+            .open,
+            .lift,
+            .warmth,
+            .color,
+            .home,
+            .open,
+            .lift,
+            .warmth,
+            .color,
+            .spark,
+            .spark,
+            .tension
+        ]
+
+        if rank < order.count {
+            return order[rank]
+        }
+
+        switch rank % 3 {
+        case 0:
+            return .color
+        case 1:
+            return .spark
+        default:
+            return .tension
+        }
+    }
+
+    func noteLabels(for instrument: KeyboardInstrument, performanceStyle: KeyboardPerformanceStyle) -> [String] {
+        switch instrument {
+        case .piano:
+            let base: [String]
+            switch self {
+            case .home:
+                base = ["C4", "E4", "G4", "C5"]
+            case .open:
+                base = ["G4", "A4", "C5", "E5"]
+            case .lift:
+                base = ["E4", "G4", "A4", "D5"]
+            case .warmth:
+                base = ["A3", "C4", "E4", "A4"]
+            case .color:
+                base = ["D4", "E4", "G4", "A4"]
+            case .spark:
+                base = ["G4", "A4", "C5", "E5"]
+            case .tension:
+                base = ["B3", "D4", "E4", "G4"]
+            }
+
+            return styledPianoNotes(from: base, family: self, performanceStyle: performanceStyle)
+        case .loFiKeys:
+            switch self {
+            case .home:
+                return ["C3", "G3", "C4", "E4"]
+            case .open:
+                return ["G3", "C4", "D4", "G4"]
+            case .lift:
+                return ["E3", "E4", "G4", "C4"]
+            case .warmth:
+                return ["A2", "A3", "E4", "A4"]
+            case .color:
+                return ["D3", "D4", "F4", "A4"]
+            case .spark:
+                return ["F3", "F4", "A4", "C5"]
+            case .tension:
+                return ["B2", "B3", "D4", "G4"]
+            }
+        }
+    }
+
+    private func styledPianoNotes(
+        from base: [String],
+        family: AdaptiveNoteFamily,
+        performanceStyle: KeyboardPerformanceStyle
+    ) -> [String] {
+        let extras: [String]
+
+        switch performanceStyle {
+        case .mellow:
+            switch family {
+            case .home:
+                extras = ["C4", "E4", "G4"]
+            case .open:
+                extras = ["G4", "A4", "C5"]
+            case .lift:
+                extras = ["E4", "G4", "A4"]
+            case .warmth:
+                extras = ["A3", "C4", "D4"]
+            case .color:
+                extras = ["C4", "D4", "E4"]
+            case .spark:
+                extras = ["E4", "G4", "A4"]
+            case .tension:
+                extras = ["B3", "D4", "E4"]
+            }
+        case .warm:
+            extras = []
+        case .bright:
+            switch family {
+            case .home:
+                extras = ["E5", "G5"]
+            case .open:
+                extras = ["E5", "G5", "A5"]
+            case .lift:
+                extras = ["D5", "E5", "G5"]
+            case .warmth:
+                extras = ["C5", "E5"]
+            case .color:
+                extras = ["A4", "C5", "E5"]
+            case .spark:
+                extras = ["E5", "G5", "A5"]
+            case .tension:
+                extras = ["D5", "F5"]
+            }
+        case .driving:
+            switch family {
+            case .home:
+                extras = ["G4", "C5", "E5"]
+            case .open:
+                extras = ["C5", "E5", "G5"]
+            case .lift:
+                extras = ["A4", "D5", "G5"]
+            case .warmth:
+                extras = ["E4", "A4", "C5"]
+            case .color:
+                extras = ["G4", "A4", "D5"]
+            case .spark:
+                extras = ["C5", "E5", "G5"]
+            case .tension:
+                extras = ["D4", "E4", "A4"]
+            }
+        case .stormy:
+            switch family {
+            case .home:
+                extras = ["A3", "B3", "D4"]
+            case .open:
+                extras = ["D4", "G4", "B4"]
+            case .lift:
+                extras = ["D4", "F4", "A4"]
+            case .warmth:
+                extras = ["G3", "A3", "C4"]
+            case .color:
+                extras = ["C4", "D4", "F4"]
+            case .spark:
+                extras = ["D4", "G4", "B4"]
+            case .tension:
+                extras = ["B3", "D4", "F4", "A4"]
+            }
+        }
+
+        return orderedUniqueNotes(extras + base)
+    }
+
+    private func orderedUniqueNotes(_ notes: [String]) -> [String] {
+        var seen = Set<String>()
+        return notes.filter { seen.insert($0).inserted }
+    }
+}
+
+private extension KeyboardSoundRole {
+    var shouldInfluenceVoiceLeading: Bool {
+        switch self {
+        case .melody, .cadence, .accent, .navigation:
+            true
+        case .pulse, .tension, .texture:
+            false
+        }
     }
 }
 
