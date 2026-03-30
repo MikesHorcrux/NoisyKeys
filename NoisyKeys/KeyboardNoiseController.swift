@@ -16,8 +16,8 @@ final class KeyboardNoiseController {
     var isNoiseEnabled = true
     var hasGlobalAccess = false
     var selectedInstrument: KeyboardInstrument = .piano
-    var selectedSoundMode: KeyboardSoundMode = .classicPiano
-    var selectedSoundModeSummary = KeyboardSoundMode.classicPiano.summary
+    var selectedSoundMode: KeyboardSoundMode = .feltBloom
+    var selectedSoundModeSummary = KeyboardSoundMode.feltBloom.summary
     var selectedProfileID = PianoProfileCatalog.defaultProfile.id
     var selectedProfileDisplayName = PianoProfileCatalog.defaultProfile.displayName
     var selectedProfileSummary = PianoProfileCatalog.defaultProfile.summary

@@ -53,38 +53,38 @@ struct NoisyKeysTests {
     @Test func soundModesStayLimitedToFourSimpleChoices() {
         #expect(KeyboardSoundMode.allCases.count == 4)
         #expect(KeyboardSoundMode.allCases.map(\.displayName) == [
-            "Classic Piano",
-            "Lo-Fi Mellow",
-            "Jazz",
-            "Robot"
+            "Grand Room",
+            "Felt Bloom",
+            "Jazz Club",
+            "Midnight Blue"
         ])
     }
 
     @MainActor
     @Test func soundModeSwitchChangesInstrumentAndBackingProfile() {
         var engine = KeyboardMusicEngine(instrument: .piano)
-        engine.setSoundMode(.jazz)
+        engine.setSoundMode(.grandRoom)
 
-        let jazzPlan = engine.plan(for: KeyboardInput(
+        let grandPlan = engine.plan(for: KeyboardInput(
             symbol: .letter("a"),
             keyCode: 0,
             source: .localApp,
             timestamp: Date(timeIntervalSinceReferenceDate: 0)
         ))
 
-        #expect(jazzPlan.instrument == .piano)
-        #expect(jazzPlan.profile.displayName == "Amber Upright")
+        #expect(grandPlan.instrument == .piano)
+        #expect(grandPlan.profile.displayName == "Concert Hall")
 
-        engine.setSoundMode(.robot)
-        let robotPlan = engine.plan(for: KeyboardInput(
+        engine.setSoundMode(.midnightBlue)
+        let midnightPlan = engine.plan(for: KeyboardInput(
             symbol: .letter("a"),
             keyCode: 0,
             source: .localApp,
             timestamp: Date(timeIntervalSinceReferenceDate: 1)
         ))
 
-        #expect(robotPlan.instrument == .loFiKeys)
-        #expect(robotPlan.profile.displayName == "Sidewalk Neon")
+        #expect(midnightPlan.instrument == .piano)
+        #expect(midnightPlan.profile.displayName == "Moonlight")
     }
 
     @MainActor
@@ -281,7 +281,7 @@ struct NoisyKeysTests {
         #expect(finalPlan?.textMood == .joyful)
         #expect(finalPlan?.performanceStyle == .mellow)
         #expect(finalPlan?.sustainPedalEngaged == true)
-        #expect(engine.performanceDescription.contains("Classic Piano"))
+        #expect(engine.performanceDescription.contains("Felt Bloom"))
         #expect(engine.performanceDescription.contains("Mellow"))
     }
 
@@ -309,7 +309,7 @@ struct NoisyKeysTests {
         #expect(finalPlan?.textMood == .angry)
         #expect(finalPlan?.performanceStyle == .stormy)
         #expect(finalPlan?.sustainPedalEngaged == false)
-        #expect(engine.performanceDescription.contains("Classic Piano"))
+        #expect(engine.performanceDescription.contains("Felt Bloom"))
         #expect(engine.performanceDescription.contains("Stormy"))
     }
 

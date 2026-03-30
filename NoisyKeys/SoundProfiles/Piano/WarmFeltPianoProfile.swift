@@ -10,10 +10,10 @@ enum WarmFeltPianoProfile {
     static let profile = PianoSoundProfile(
         id: "warm-felt",
         displayName: "Warm Felt",
-        summary: "Soft close-up piano with rounded edges and calm weight.",
+        summary: "Intimate felt piano with warm body and a softer bloom on the tail.",
         soundPrefix: "piano-warm-felt",
         programNumber: 0,
-        masterGain: -1,
+        masterGain: -0.5,
         registerMap: PianoRegisterMap(
             bass: ["G3", "A3", "C4", "D4", "E4"],
             low: ["C4", "D4", "E4", "G4", "A4"],
@@ -27,23 +27,23 @@ enum WarmFeltPianoProfile {
         texturePalette: ["D5", "E5", "G5"],
         effectConfiguration: InstrumentEffectConfiguration(
             eqBands: [
-                EQBandConfiguration(filterType: .parametric, frequency: 170, bandwidth: 0.9, gain: 1.7),
-                EQBandConfiguration(filterType: .parametric, frequency: 310, bandwidth: 1.04, gain: -1.0),
-                EQBandConfiguration(filterType: .parametric, frequency: 2_700, bandwidth: 1.0, gain: -1.5)
+                EQBandConfiguration(filterType: .parametric, frequency: 160, bandwidth: 0.92, gain: 2.0),
+                EQBandConfiguration(filterType: .parametric, frequency: 360, bandwidth: 1.02, gain: -1.4),
+                EQBandConfiguration(filterType: .parametric, frequency: 2_450, bandwidth: 0.98, gain: -1.9)
             ],
             reverbPreset: .mediumChamber,
-            reverbMix: 16,
-            delayTime: 0.014,
-            delayFeedback: 1.1,
-            delayLowPassCutoff: 6_200,
-            delayMix: 1.2,
-            spaceVolume: 0.92,
-            outputVolume: 0.87
+            reverbMix: 19,
+            delayTime: 0.018,
+            delayFeedback: 1.4,
+            delayLowPassCutoff: 5_700,
+            delayMix: 1.6,
+            spaceVolume: 0.93,
+            outputVolume: 0.89
         ),
-        baseVelocityScale: 0.97,
-        melodyDurationScale: 1.08,
-        pulseDurationScale: 0.9,
-        cadenceDurationScale: 1.1,
+        baseVelocityScale: 0.96,
+        melodyDurationScale: 1.12,
+        pulseDurationScale: 0.94,
+        cadenceDurationScale: 1.15,
         anchorBaseMidi: 61,
         registerBias: -1
     )

@@ -10,10 +10,10 @@ enum ConcertHallPianoProfile {
     static let profile = PianoSoundProfile(
         id: "concert-hall",
         displayName: "Concert Hall",
-        summary: "Balanced grand piano with a wide cinematic spread.",
+        summary: "Wide grand piano with a brighter bloom and more room around the notes.",
         soundPrefix: "piano-concert-hall",
         programNumber: 0,
-        masterGain: 0,
+        masterGain: 0.4,
         registerMap: PianoRegisterMap(
             bass: ["C3", "D3", "E3", "G3", "A3"],
             low: ["A3", "C4", "D4", "E4", "G4"],
@@ -27,24 +27,24 @@ enum ConcertHallPianoProfile {
         texturePalette: ["E5", "G5", "A5"],
         effectConfiguration: InstrumentEffectConfiguration(
             eqBands: [
-                EQBandConfiguration(filterType: .parametric, frequency: 175, bandwidth: 0.84, gain: 1.0),
-                EQBandConfiguration(filterType: .parametric, frequency: 300, bandwidth: 1.0, gain: -0.6),
-                EQBandConfiguration(filterType: .parametric, frequency: 4_600, bandwidth: 0.84, gain: 0.6)
+                EQBandConfiguration(filterType: .parametric, frequency: 165, bandwidth: 0.82, gain: 1.3),
+                EQBandConfiguration(filterType: .parametric, frequency: 320, bandwidth: 0.98, gain: -0.9),
+                EQBandConfiguration(filterType: .parametric, frequency: 5_200, bandwidth: 0.82, gain: 1.0)
             ],
             reverbPreset: .largeHall,
-            reverbMix: 19,
-            delayTime: 0.02,
-            delayFeedback: 1.3,
-            delayLowPassCutoff: 5_400,
-            delayMix: 1.8,
-            spaceVolume: 0.94,
-            outputVolume: 0.89
+            reverbMix: 23,
+            delayTime: 0.024,
+            delayFeedback: 1.6,
+            delayLowPassCutoff: 5_800,
+            delayMix: 2.4,
+            spaceVolume: 0.96,
+            outputVolume: 0.91
         ),
-        baseVelocityScale: 1,
-        melodyDurationScale: 1.04,
+        baseVelocityScale: 1.01,
+        melodyDurationScale: 1.08,
         pulseDurationScale: 0.94,
-        cadenceDurationScale: 1.08,
-        anchorBaseMidi: 62,
+        cadenceDurationScale: 1.12,
+        anchorBaseMidi: 63,
         registerBias: 0
     )
 }

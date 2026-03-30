@@ -71,7 +71,7 @@ struct ContentView: View {
                         }
                     }
 
-                    Text("Pick one fixed vibe and let it stay there. Four buttons, no profile maze.")
+                    Text("Pick one piano mood and let it stay there. Four buttons, no profile maze.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
@@ -121,7 +121,7 @@ struct ContentView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
 
-                    Text("The buttons stay simple, but the engine is still learning your common keys underneath.")
+                    Text("The buttons stay simple, but each piano mood has its own register, color, and room underneath.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }

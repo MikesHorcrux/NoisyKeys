@@ -6,58 +6,53 @@
 import Foundation
 
 enum KeyboardSoundMode: String, CaseIterable, Identifiable {
-    case classicPiano
-    case loFiMellow
-    case jazz
-    case robot
+    case grandRoom
+    case feltBloom
+    case jazzClub
+    case midnightBlue
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .classicPiano:
-            "Classic Piano"
-        case .loFiMellow:
-            "Lo-Fi Mellow"
-        case .jazz:
-            "Jazz"
-        case .robot:
-            "Robot"
+        case .grandRoom:
+            "Grand Room"
+        case .feltBloom:
+            "Felt Bloom"
+        case .jazzClub:
+            "Jazz Club"
+        case .midnightBlue:
+            "Midnight Blue"
         }
     }
 
     var summary: String {
         switch self {
-        case .classicPiano:
-            "Soft, balanced piano with a clean natural tail."
-        case .loFiMellow:
-            "Sleepy electric keys with a mellow tape wash."
-        case .jazz:
-            "Woody upright piano with a little more bite and swing."
-        case .robot:
-            "Sharper synthy keys with a more mechanical edge."
+        case .grandRoom:
+            "Open grand piano with a wider room and brighter bloom."
+        case .feltBloom:
+            "Soft felt piano with warm body and creamy tails."
+        case .jazzClub:
+            "Woody upright piano with smoky mids and a tighter bounce."
+        case .midnightBlue:
+            "Dark cinematic piano with cooler air and longer resolve."
         }
     }
 
     var instrument: KeyboardInstrument {
-        switch self {
-        case .classicPiano, .jazz:
-            .piano
-        case .loFiMellow, .robot:
-            .loFiKeys
-        }
+        .piano
     }
 
     var profileID: String {
         switch self {
-        case .classicPiano:
+        case .grandRoom:
+            ConcertHallPianoProfile.profile.id
+        case .feltBloom:
             WarmFeltPianoProfile.profile.id
-        case .loFiMellow:
-            RainWindowLoFiProfile.profile.id
-        case .jazz:
+        case .jazzClub:
             AmberUprightPianoProfile.profile.id
-        case .robot:
-            SidewalkNeonLoFiProfile.profile.id
+        case .midnightBlue:
+            MoonlightPianoProfile.profile.id
         }
     }
 
@@ -68,9 +63,9 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
 
         switch instrument {
         case .piano:
-            return .classicPiano
+            return .feltBloom
         case .loFiKeys:
-            return .loFiMellow
+            return .feltBloom
         }
     }
 }

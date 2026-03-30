@@ -416,7 +416,7 @@ struct KeyboardMusicEngine {
     private var pianoPhraseTracker = PianoPhraseTracker()
     private var pianoProfile = PianoProfileCatalog.defaultProfile
     private var loFiProfile = LoFiProfileCatalog.defaultProfile
-    private var soundMode = KeyboardSoundMode.classicPiano
+    private var soundMode = KeyboardSoundMode.feltBloom
     private var lastLeadNoteLabel: String?
     private(set) var lastTempo = TypingTempoSnapshot.idle
     private(set) var learnedKeysSummary: String
@@ -430,14 +430,14 @@ struct KeyboardMusicEngine {
             profileID: instrument == .piano ? PianoProfileCatalog.defaultProfile.id : LoFiProfileCatalog.defaultProfile.id
         )
         switch soundMode {
-        case .classicPiano:
+        case .grandRoom:
+            pianoProfile = ConcertHallPianoProfile.profile
+        case .feltBloom:
             pianoProfile = WarmFeltPianoProfile.profile
-        case .loFiMellow:
-            loFiProfile = RainWindowLoFiProfile.profile
-        case .jazz:
+        case .jazzClub:
             pianoProfile = AmberUprightPianoProfile.profile
-        case .robot:
-            loFiProfile = SidewalkNeonLoFiProfile.profile
+        case .midnightBlue:
+            pianoProfile = MoonlightPianoProfile.profile
         }
         usageProfile = AdaptiveKeyLearningProfile(persistentLearning: persistentLearning)
         learnedKeysSummary = usageProfile.topKeysSummary
@@ -586,18 +586,18 @@ struct KeyboardMusicEngine {
         soundMode = mode
 
         switch mode {
-        case .classicPiano:
+        case .grandRoom:
+            instrument = .piano
+            pianoProfile = ConcertHallPianoProfile.profile
+        case .feltBloom:
             instrument = .piano
             pianoProfile = WarmFeltPianoProfile.profile
-        case .loFiMellow:
-            instrument = .loFiKeys
-            loFiProfile = RainWindowLoFiProfile.profile
-        case .jazz:
+        case .jazzClub:
             instrument = .piano
             pianoProfile = AmberUprightPianoProfile.profile
-        case .robot:
-            instrument = .loFiKeys
-            loFiProfile = SidewalkNeonLoFiProfile.profile
+        case .midnightBlue:
+            instrument = .piano
+            pianoProfile = MoonlightPianoProfile.profile
         }
 
         resetCurrentInstrumentState()
