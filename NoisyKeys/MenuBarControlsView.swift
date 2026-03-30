@@ -15,6 +15,8 @@ struct MenuBarControlsView: View {
         Group {
             Text(controller.isNoiseEnabled ? "Noise On" : "Noise Off")
             Text(controller.monitoringScope)
+            Text(controller.selectedSoundMode.displayName)
+            Text(controller.selectedSoundModeSummary)
             Toggle("Keyboard sounds enabled", isOn: Binding(
                 get: { controller.isNoiseEnabled },
                 set: { controller.setNoiseEnabled($0) }
@@ -22,6 +24,22 @@ struct MenuBarControlsView: View {
 
             Button("Check Access Again") {
                 controller.refreshAccessStatus(promptIfNeeded: true)
+            }
+
+            Divider()
+
+            ForEach(controller.availableSoundModes) { mode in
+                Button {
+                    controller.setSoundMode(mode)
+                } label: {
+                    HStack {
+                        Text(mode.displayName)
+                        Spacer()
+                        if mode == controller.selectedSoundMode {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
             }
 
             Divider()

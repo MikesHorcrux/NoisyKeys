@@ -5,27 +5,7 @@
 //  Created by Codex on 3/30/26.
 //
 
-import AVFoundation
 import Foundation
-
-struct EQBandConfiguration {
-    let filterType: AVAudioUnitEQFilterType
-    let frequency: Float
-    let bandwidth: Float
-    let gain: Float
-}
-
-struct InstrumentEffectConfiguration {
-    let eqBands: [EQBandConfiguration]
-    let reverbPreset: AVAudioUnitReverbPreset
-    let reverbMix: Float
-    let delayTime: TimeInterval
-    let delayFeedback: Float
-    let delayLowPassCutoff: Float
-    let delayMix: Float
-    let spaceVolume: Float
-    let outputVolume: Float
-}
 
 enum KeyboardSpatialLayout {
     static func column(for keyCode: UInt16) -> Int {
@@ -69,6 +49,7 @@ struct PianoPhraseTracker {
     mutating func mapping(
         for input: KeyboardInput,
         instrument: KeyboardInstrument,
+        profile: PianoSoundProfile,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle,
         textMood: TypingTextMood,
@@ -78,8 +59,14 @@ struct PianoPhraseTracker {
             return nil
         }
 
-        if state?.performanceStyle != performanceStyle || state?.textMood != textMood {
-            state = PianoPhraseState(performanceStyle: performanceStyle, textMood: textMood)
+        if state?.performanceStyle != performanceStyle ||
+            state?.textMood != textMood ||
+            state?.profileID != profile.id {
+            state = PianoPhraseState(
+                profile: profile,
+                performanceStyle: performanceStyle,
+                textMood: textMood
+            )
         }
 
         guard var state else {
@@ -94,6 +81,7 @@ struct PianoPhraseTracker {
     func previewMapping(
         for input: KeyboardInput,
         instrument: KeyboardInstrument,
+        profile: PianoSoundProfile,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle,
         textMood: TypingTextMood,
@@ -103,6 +91,7 @@ struct PianoPhraseTracker {
         return copy.mapping(
             for: input,
             instrument: instrument,
+            profile: profile,
             tempo: tempo,
             performanceStyle: performanceStyle,
             textMood: textMood,
@@ -116,13 +105,11 @@ struct PianoPhraseTracker {
 }
 
 enum PianoPlaybackProfile {
-    static let programNumber: UInt8 = 0
-    static let masterGain: Float = 0
-
     static func duration(
         for role: KeyboardSoundRole,
         tempo: TypingTempoSnapshot,
-        performanceStyle: KeyboardPerformanceStyle
+        performanceStyle: KeyboardPerformanceStyle,
+        profile: InstrumentProfileSnapshot
     ) -> TimeInterval {
         let baseDuration: TimeInterval
 
@@ -143,7 +130,19 @@ enum PianoPlaybackProfile {
             baseDuration = 0.46
         }
 
-        return baseDuration * durationMultiplier(
+        let profileScale: Double
+        switch role {
+        case .melody:
+            profileScale = profile.melodyDurationScale
+        case .pulse:
+            profileScale = profile.pulseDurationScale
+        case .cadence:
+            profileScale = profile.cadenceDurationScale
+        case .tension, .texture, .accent, .navigation:
+            profileScale = 1
+        }
+
+        return baseDuration * profileScale * durationMultiplier(
             for: role,
             tempo: tempo,
             performanceStyle: performanceStyle
@@ -152,105 +151,28 @@ enum PianoPlaybackProfile {
 
     static func roleVelocityScale(
         for _: KeyboardSoundRole,
-        performanceStyle: KeyboardPerformanceStyle
+        performanceStyle: KeyboardPerformanceStyle,
+        profile: InstrumentProfileSnapshot
     ) -> Double {
+        let styleScale: Double
         switch performanceStyle {
         case .mellow:
-            return 0.98
+            styleScale = 0.98
         case .warm:
-            return 1
+            styleScale = 1
         case .bright:
-            return 1.02
+            styleScale = 1.02
         case .driving:
-            return 1.04
+            styleScale = 1.04
         case .stormy:
-            return 1.05
+            styleScale = 1.05
         }
+
+        return styleScale * profile.baseVelocityScale
     }
 
-    static func effectConfiguration(for performanceStyle: KeyboardPerformanceStyle) -> InstrumentEffectConfiguration {
-        switch performanceStyle {
-        case .mellow:
-            return InstrumentEffectConfiguration(
-                eqBands: [
-                    EQBandConfiguration(filterType: .parametric, frequency: 170, bandwidth: 0.9, gain: 1.8),
-                    EQBandConfiguration(filterType: .parametric, frequency: 310, bandwidth: 1.05, gain: -0.9),
-                    EQBandConfiguration(filterType: .parametric, frequency: 2_600, bandwidth: 1.1, gain: -1.6)
-                ],
-                reverbPreset: .mediumChamber,
-                reverbMix: 18,
-                delayTime: 0.014,
-                delayFeedback: 1.3,
-                delayLowPassCutoff: 6_300,
-                delayMix: 1.5,
-                spaceVolume: 0.92,
-                outputVolume: 0.86
-            )
-        case .warm:
-            return InstrumentEffectConfiguration(
-                eqBands: [
-                    EQBandConfiguration(filterType: .parametric, frequency: 175, bandwidth: 0.86, gain: 1.4),
-                    EQBandConfiguration(filterType: .parametric, frequency: 320, bandwidth: 1.0, gain: -0.8),
-                    EQBandConfiguration(filterType: .parametric, frequency: 3_000, bandwidth: 1.0, gain: -0.9)
-                ],
-                reverbPreset: .mediumChamber,
-                reverbMix: 14,
-                delayTime: 0.018,
-                delayFeedback: 1.4,
-                delayLowPassCutoff: 5_800,
-                delayMix: 1.8,
-                spaceVolume: 0.93,
-                outputVolume: 0.88
-            )
-        case .bright:
-            return InstrumentEffectConfiguration(
-                eqBands: [
-                    EQBandConfiguration(filterType: .parametric, frequency: 180, bandwidth: 0.82, gain: 0.5),
-                    EQBandConfiguration(filterType: .parametric, frequency: 340, bandwidth: 0.95, gain: -1.2),
-                    EQBandConfiguration(filterType: .parametric, frequency: 5_700, bandwidth: 0.78, gain: 1.1)
-                ],
-                reverbPreset: .mediumRoom,
-                reverbMix: 10,
-                delayTime: 0.024,
-                delayFeedback: 1.8,
-                delayLowPassCutoff: 5_100,
-                delayMix: 2.3,
-                spaceVolume: 0.95,
-                outputVolume: 0.89
-            )
-        case .driving:
-            return InstrumentEffectConfiguration(
-                eqBands: [
-                    EQBandConfiguration(filterType: .parametric, frequency: 170, bandwidth: 0.84, gain: 0.6),
-                    EQBandConfiguration(filterType: .parametric, frequency: 360, bandwidth: 1.0, gain: -1.4),
-                    EQBandConfiguration(filterType: .parametric, frequency: 5_000, bandwidth: 0.8, gain: 0.8)
-                ],
-                reverbPreset: .mediumRoom,
-                reverbMix: 7,
-                delayTime: 0.022,
-                delayFeedback: 1.5,
-                delayLowPassCutoff: 4_700,
-                delayMix: 2.1,
-                spaceVolume: 0.95,
-                outputVolume: 0.89
-            )
-        case .stormy:
-            return InstrumentEffectConfiguration(
-                eqBands: [
-                    EQBandConfiguration(filterType: .parametric, frequency: 180, bandwidth: 0.9, gain: 0.9),
-                    EQBandConfiguration(filterType: .parametric, frequency: 330, bandwidth: 1.0, gain: -1.5),
-                    EQBandConfiguration(filterType: .parametric, frequency: 4_500, bandwidth: 0.84, gain: 0.3)
-                ],
-                reverbPreset: .mediumRoom,
-                reverbMix: 6,
-                delayTime: 0.02,
-                delayFeedback: 1.2,
-                delayLowPassCutoff: 4_200,
-                delayMix: 1.6,
-                spaceVolume: 0.94,
-                outputVolume: 0.88
-            )
-        }
+    static func effectConfiguration(for profile: InstrumentProfileSnapshot) -> InstrumentEffectConfiguration {
+        profile.effectConfiguration
     }
 
     private static func durationMultiplier(
@@ -341,8 +263,10 @@ enum PianoPlaybackProfile {
 }
 
 private struct PianoPhraseState {
+    let profileID: String
     let performanceStyle: KeyboardPerformanceStyle
     let textMood: TypingTextMood
+    let registerMap: PianoRegisterMap
 
     private var bandIndices: [PianoKeyboardBand: Int]
     private var bandDirections: [PianoKeyboardBand: Int]
@@ -350,9 +274,11 @@ private struct PianoPhraseState {
     private var activeBand: PianoKeyboardBand
     private var lastActiveNoteLabel: String?
 
-    init(performanceStyle: KeyboardPerformanceStyle, textMood: TypingTextMood) {
+    init(profile: PianoSoundProfile, performanceStyle: KeyboardPerformanceStyle, textMood: TypingTextMood) {
+        self.profileID = profile.id
         self.performanceStyle = performanceStyle
         self.textMood = textMood
+        self.registerMap = profile.registerMap
         self.bandIndices = [:]
         self.bandDirections = [:]
         self.bandEventCounts = [:]
@@ -360,7 +286,7 @@ private struct PianoPhraseState {
         self.lastActiveNoteLabel = nil
 
         for band in PianoKeyboardBand.allCases {
-            let lane = Self.melodicLane(for: band, performanceStyle: performanceStyle, textMood: textMood)
+            let lane = melodicLane(for: band)
             bandIndices[band] = Self.startIndex(for: band, laneCount: lane.count)
             bandDirections[band] = 1
             bandEventCounts[band] = 0
@@ -477,7 +403,7 @@ private struct PianoPhraseState {
         activeBand = band
         bandEventCounts[band, default: 0] += 1
 
-        let lane = Self.melodicLane(for: band, performanceStyle: performanceStyle, textMood: textMood)
+        let lane = melodicLane(for: band)
         let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
         let movement = requestedMovement(
             for: family,
@@ -502,7 +428,7 @@ private struct PianoPhraseState {
 
     private mutating func cadenceNote(in band: PianoKeyboardBand) -> String {
         activeBand = band
-        let lane = Self.melodicLane(for: band, performanceStyle: performanceStyle, textMood: textMood)
+        let lane = melodicLane(for: band)
         let cadenceAnchors = Self.cadenceIndices(forLaneCount: lane.count)
         let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
         let targetIndex = cadenceAnchors.min { abs($0 - currentIndex) < abs($1 - currentIndex) } ?? currentIndex
@@ -517,7 +443,7 @@ private struct PianoPhraseState {
 
     private mutating func continuationNote() -> String {
         let band = activeBand
-        let lane = Self.melodicLane(for: band, performanceStyle: performanceStyle, textMood: textMood)
+        let lane = melodicLane(for: band)
         let noteLabel = lane[bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)]
         lastActiveNoteLabel = noteLabel
         return noteLabel
@@ -525,7 +451,7 @@ private struct PianoPhraseState {
 
     private mutating func ornamentNote(in band: PianoKeyboardBand, direction: Int) -> String {
         activeBand = band
-        let lane = Self.melodicLane(for: band, performanceStyle: performanceStyle, textMood: textMood)
+        let lane = melodicLane(for: band)
         let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
         let nextIndex = max(0, min(lane.count - 1, currentIndex + direction))
         bandIndices[band] = nextIndex
@@ -536,7 +462,7 @@ private struct PianoPhraseState {
 
     private mutating func textureNote(in band: PianoKeyboardBand, offset: Int) -> String {
         activeBand = band
-        let lane = Self.melodicLane(for: band, performanceStyle: performanceStyle, textMood: textMood)
+        let lane = melodicLane(for: band)
         let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
         let textureIndex = max(0, min(lane.count - 1, currentIndex + offset))
         let noteLabel = lane[textureIndex]
@@ -622,67 +548,18 @@ private struct PianoPhraseState {
         return (proposed, direction)
     }
 
-    private static func melodicLane(
-        for band: PianoKeyboardBand,
-        performanceStyle: KeyboardPerformanceStyle,
-        textMood: TypingTextMood
-    ) -> [String] {
+    private func melodicLane(for band: PianoKeyboardBand) -> [String] {
         switch band {
         case .bass:
-            switch performanceStyle {
-            case .mellow, .stormy:
-                return textMood == .joyful
-                    ? ["A3", "C4", "D4", "E4", "G4"]
-                    : ["G3", "A3", "C4", "D4", "E4"]
-            case .warm, .driving:
-                return ["A3", "C4", "D4", "E4", "G4"]
-            case .bright:
-                return ["C4", "D4", "E4", "G4", "A4"]
-            }
+            return registerMap.bass
         case .low:
-            switch performanceStyle {
-            case .mellow, .stormy:
-                return ["C4", "D4", "E4", "G4", "A4"]
-            case .warm, .driving:
-                return ["C4", "D4", "E4", "G4", "A4", "C5"]
-            case .bright:
-                return ["D4", "E4", "G4", "A4", "C5", "D5"]
-            }
+            return registerMap.low
         case .middle:
-            switch performanceStyle {
-            case .mellow:
-                return textMood == .joyful
-                    ? ["D4", "E4", "G4", "A4", "C5", "D5"]
-                    : ["C4", "D4", "E4", "G4", "A4", "C5"]
-            case .warm:
-                return textMood == .joyful
-                    ? ["D4", "E4", "G4", "A4", "C5", "E5"]
-                    : ["C4", "D4", "E4", "G4", "A4", "C5"]
-            case .bright:
-                return ["E4", "G4", "A4", "C5", "D5", "E5"]
-            case .driving:
-                return ["D4", "E4", "G4", "A4", "C5", "D5"]
-            case .stormy:
-                return ["C4", "D4", "E4", "G4", "A4", "C5"]
-            }
+            return registerMap.middle
         case .upper:
-            switch performanceStyle {
-            case .mellow, .warm:
-                return ["G4", "A4", "C5", "D5", "E5", "G5"]
-            case .bright, .driving:
-                return ["A4", "C5", "D5", "E5", "G5", "A5"]
-            case .stormy:
-                return ["G4", "A4", "C5", "D5", "E5", "G5"]
-            }
+            return registerMap.upper
         case .high:
-            switch performanceStyle {
-            case .mellow, .warm:
-                return ["C5", "D5", "E5", "G5", "A5", "C6"]
-            case .bright, .driving:
-                return ["D5", "E5", "G5", "A5", "C6", "D6"]
-            case .stormy:
-                return ["C5", "D5", "E5", "G5", "A5", "C6"]
-            }
+            return registerMap.high
         }
     }
 

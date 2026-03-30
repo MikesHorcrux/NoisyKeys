@@ -16,6 +16,11 @@ final class KeyboardNoiseController {
     var isNoiseEnabled = true
     var hasGlobalAccess = false
     var selectedInstrument: KeyboardInstrument = .piano
+    var selectedSoundMode: KeyboardSoundMode = .classicPiano
+    var selectedSoundModeSummary = KeyboardSoundMode.classicPiano.summary
+    var selectedProfileID = PianoProfileCatalog.defaultProfile.id
+    var selectedProfileDisplayName = PianoProfileCatalog.defaultProfile.displayName
+    var selectedProfileSummary = PianoProfileCatalog.defaultProfile.summary
     var accessMessage = "Checking keyboard access..."
     var lastEventDescription = "Waiting for the first clack."
     var lastSoundIdentifier = "Waiting for the first mapped sound."
@@ -33,6 +38,12 @@ final class KeyboardNoiseController {
     private var hasStarted = false
 
     init() {
+        selectedInstrument = musicEngine.instrument
+        selectedSoundMode = musicEngine.currentSoundMode
+        selectedSoundModeSummary = musicEngine.currentSoundMode.summary
+        selectedProfileID = musicEngine.currentProfileID
+        selectedProfileDisplayName = musicEngine.currentProfileDisplayName
+        selectedProfileSummary = musicEngine.currentProfileSummary
         learnedKeysDescription = musicEngine.learnedKeysSummary
         adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
         performanceDescription = musicEngine.performanceDescription
@@ -99,10 +110,37 @@ final class KeyboardNoiseController {
         applyPlan(plan, countAsKeyPress: false)
     }
 
+    var availableSoundModes: [KeyboardSoundMode] {
+        musicEngine.availableSoundModes
+    }
+
+    var availableProfiles: [ProfileOption] {
+        musicEngine.availableProfileOptions
+    }
+
     func setInstrument(_ instrument: KeyboardInstrument) {
         player.resetPerformanceState()
         selectedInstrument = instrument
         musicEngine.setInstrument(instrument)
+        syncSelectionState()
+        learnedKeysDescription = musicEngine.learnedKeysSummary
+        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
+        performanceDescription = musicEngine.performanceDescription
+    }
+
+    func setSoundMode(_ mode: KeyboardSoundMode) {
+        player.resetPerformanceState()
+        musicEngine.setSoundMode(mode)
+        syncSelectionState()
+        learnedKeysDescription = musicEngine.learnedKeysSummary
+        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
+        performanceDescription = musicEngine.performanceDescription
+    }
+
+    func setProfile(id: String) {
+        player.resetPerformanceState()
+        musicEngine.setCurrentProfile(id: id)
+        syncSelectionState()
         learnedKeysDescription = musicEngine.learnedKeysSummary
         adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
         performanceDescription = musicEngine.performanceDescription
@@ -230,6 +268,15 @@ final class KeyboardNoiseController {
         adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
         performanceDescription = musicEngine.performanceDescription
         player.play(plan)
+    }
+
+    private func syncSelectionState() {
+        selectedInstrument = musicEngine.instrument
+        selectedSoundMode = musicEngine.currentSoundMode
+        selectedSoundModeSummary = musicEngine.currentSoundMode.summary
+        selectedProfileID = musicEngine.currentProfileID
+        selectedProfileDisplayName = musicEngine.currentProfileDisplayName
+        selectedProfileSummary = musicEngine.currentProfileSummary
     }
 }
 

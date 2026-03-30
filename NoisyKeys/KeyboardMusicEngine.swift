@@ -386,6 +386,7 @@ struct TypingExpressionSnapshot: Equatable {
 
 struct SoundTriggerPlan: Equatable {
     let instrument: KeyboardInstrument
+    let profile: InstrumentProfileSnapshot
     let role: KeyboardSoundRole
     let soundID: String
     let noteLabel: String
@@ -400,7 +401,7 @@ struct SoundTriggerPlan: Equatable {
     let learnedRank: Int?
 
     var debugSummary: String {
-        "\(instrument.displayName) \(role.displayName) \(noteLabel) \(noteFamilyName) for \(keyLabel) · \(performanceStyle.displayName) · \(textMood.displayName) · \(tempo.summary) · \(source.rawValue)"
+        "\(profile.displayName) \(role.displayName) \(noteLabel) \(noteFamilyName) for \(keyLabel) · \(performanceStyle.displayName) · \(textMood.displayName) · \(tempo.summary) · \(source.rawValue)"
     }
 }
 
@@ -413,6 +414,9 @@ struct KeyboardMusicEngine {
     private var expressionTracker = TypingExpressionTracker()
     private var performanceBurstLock = TypingPerformanceBurstLock()
     private var pianoPhraseTracker = PianoPhraseTracker()
+    private var pianoProfile = PianoProfileCatalog.defaultProfile
+    private var loFiProfile = LoFiProfileCatalog.defaultProfile
+    private var soundMode = KeyboardSoundMode.classicPiano
     private var lastLeadNoteLabel: String?
     private(set) var lastTempo = TypingTempoSnapshot.idle
     private(set) var learnedKeysSummary: String
@@ -421,10 +425,60 @@ struct KeyboardMusicEngine {
 
     init(instrument: KeyboardInstrument = .piano, persistentLearning: Bool = false) {
         self.instrument = instrument
+        soundMode = KeyboardSoundMode.preferredMode(
+            for: instrument,
+            profileID: instrument == .piano ? PianoProfileCatalog.defaultProfile.id : LoFiProfileCatalog.defaultProfile.id
+        )
+        switch soundMode {
+        case .classicPiano:
+            pianoProfile = WarmFeltPianoProfile.profile
+        case .loFiMellow:
+            loFiProfile = RainWindowLoFiProfile.profile
+        case .jazz:
+            pianoProfile = AmberUprightPianoProfile.profile
+        case .robot:
+            loFiProfile = SidewalkNeonLoFiProfile.profile
+        }
         usageProfile = AdaptiveKeyLearningProfile(persistentLearning: persistentLearning)
         learnedKeysSummary = usageProfile.topKeysSummary
         adaptiveMappingDescription = usageProfile.defaultDescription
-        performanceDescription = KeyboardPerformanceStyle.warm.summary(for: instrument, textMood: .neutral)
+        let defaultProfile = instrument == .piano ? pianoProfile.snapshot : loFiProfile.snapshot
+        performanceDescription = Self.defaultPerformanceDescription(
+            for: defaultProfile,
+            mode: soundMode,
+            instrument: instrument
+        )
+    }
+
+    var selectedPianoProfile: PianoSoundProfile { pianoProfile }
+
+    var selectedLoFiProfile: LoFiSoundProfile { loFiProfile }
+
+    var currentSoundMode: KeyboardSoundMode { soundMode }
+
+    var availableSoundModes: [KeyboardSoundMode] {
+        KeyboardSoundMode.allCases
+    }
+
+    var currentProfileDisplayName: String {
+        currentProfileSnapshot.displayName
+    }
+
+    var currentProfileSummary: String {
+        currentProfileSnapshot.summary
+    }
+
+    var currentProfileID: String {
+        currentProfileSnapshot.id
+    }
+
+    var availableProfileOptions: [ProfileOption] {
+        switch instrument {
+        case .piano:
+            PianoProfileCatalog.all.map { ProfileOption(id: $0.id, displayName: $0.displayName, summary: $0.summary) }
+        case .loFiKeys:
+            LoFiProfileCatalog.all.map { ProfileOption(id: $0.id, displayName: $0.displayName, summary: $0.summary) }
+        }
     }
 
     mutating func plan(for input: KeyboardInput) -> SoundTriggerPlan {
@@ -449,15 +503,18 @@ struct KeyboardMusicEngine {
         let phraseMapping = pianoPhraseTracker.mapping(
             for: input,
             instrument: instrument,
+            profile: pianoProfile,
             tempo: tempo,
             performanceStyle: burstPerformance.performanceStyle,
             textMood: burstPerformance.textMood,
             usageSnapshot: usageSnapshot
         )
+        let currentProfile = currentProfileSnapshot
         lastTempo = tempo
         let plan = KeyboardSoundPlanner.plan(
             for: input,
             instrument: instrument,
+            profile: currentProfile,
             tempo: tempo,
             textMood: burstPerformance.textMood,
             performanceStyle: burstPerformance.performanceStyle,
@@ -470,7 +527,7 @@ struct KeyboardMusicEngine {
         }
         learnedKeysSummary = usageProfile.topKeysSummary
         adaptiveMappingDescription = usageProfile.description(for: input.symbol, snapshot: usageSnapshot)
-        performanceDescription = plan.performanceStyle.summary(for: instrument, textMood: plan.textMood)
+        performanceDescription = Self.performanceDescription(for: plan, mode: soundMode)
         return plan
     }
 
@@ -487,6 +544,7 @@ struct KeyboardMusicEngine {
         let previewMapping = pianoPhraseTracker.previewMapping(
             for: input,
             instrument: instrument,
+            profile: pianoProfile,
             tempo: lastTempo,
             performanceStyle: previewPerformance.performanceStyle,
             textMood: previewPerformance.textMood,
@@ -495,6 +553,7 @@ struct KeyboardMusicEngine {
         return KeyboardSoundPlanner.plan(
             for: input,
             instrument: instrument,
+            profile: currentProfileSnapshot,
             tempo: lastTempo,
             textMood: previewPerformance.textMood,
             performanceStyle: previewPerformance.performanceStyle,
@@ -506,6 +565,7 @@ struct KeyboardMusicEngine {
 
     mutating func setInstrument(_ instrument: KeyboardInstrument) {
         self.instrument = instrument
+        soundMode = KeyboardSoundMode.preferredMode(for: instrument, profileID: currentProfileSnapshot.id)
         burstTracker.reset()
         cadenceTracker.reset()
         expressionTracker.reset()
@@ -515,7 +575,105 @@ struct KeyboardMusicEngine {
         lastTempo = .idle
         learnedKeysSummary = usageProfile.topKeysSummary
         adaptiveMappingDescription = usageProfile.defaultDescription
-        performanceDescription = KeyboardPerformanceStyle.warm.summary(for: instrument, textMood: .neutral)
+        performanceDescription = Self.defaultPerformanceDescription(
+            for: currentProfileSnapshot,
+            mode: soundMode,
+            instrument: instrument
+        )
+    }
+
+    mutating func setSoundMode(_ mode: KeyboardSoundMode) {
+        soundMode = mode
+
+        switch mode {
+        case .classicPiano:
+            instrument = .piano
+            pianoProfile = WarmFeltPianoProfile.profile
+        case .loFiMellow:
+            instrument = .loFiKeys
+            loFiProfile = RainWindowLoFiProfile.profile
+        case .jazz:
+            instrument = .piano
+            pianoProfile = AmberUprightPianoProfile.profile
+        case .robot:
+            instrument = .loFiKeys
+            loFiProfile = SidewalkNeonLoFiProfile.profile
+        }
+
+        resetCurrentInstrumentState()
+    }
+
+    mutating func setCurrentProfile(id: String) {
+        switch instrument {
+        case .piano:
+            setPianoProfile(id)
+        case .loFiKeys:
+            setLoFiProfile(id)
+        }
+    }
+
+    mutating func setPianoProfile(_ id: String) {
+        pianoProfile = PianoProfileCatalog.profile(for: id)
+        soundMode = KeyboardSoundMode.preferredMode(for: .piano, profileID: pianoProfile.id)
+        if instrument == .piano {
+            resetCurrentInstrumentState()
+        }
+    }
+
+    mutating func setLoFiProfile(_ id: String) {
+        loFiProfile = LoFiProfileCatalog.profile(for: id)
+        soundMode = KeyboardSoundMode.preferredMode(for: .loFiKeys, profileID: loFiProfile.id)
+        if instrument == .loFiKeys {
+            resetCurrentInstrumentState()
+        }
+    }
+
+    private var currentProfileSnapshot: InstrumentProfileSnapshot {
+        switch instrument {
+        case .piano:
+            pianoProfile.snapshot
+        case .loFiKeys:
+            loFiProfile.snapshot
+        }
+    }
+
+    private mutating func resetCurrentInstrumentState() {
+        burstTracker.reset()
+        cadenceTracker.reset()
+        expressionTracker.reset()
+        performanceBurstLock.reset()
+        pianoPhraseTracker.reset()
+        lastLeadNoteLabel = nil
+        lastTempo = .idle
+        learnedKeysSummary = usageProfile.topKeysSummary
+        adaptiveMappingDescription = usageProfile.defaultDescription
+        performanceDescription = Self.defaultPerformanceDescription(
+            for: currentProfileSnapshot,
+            mode: soundMode,
+            instrument: instrument
+        )
+    }
+
+    private static func defaultPerformanceDescription(
+        for profile: InstrumentProfileSnapshot,
+        mode: KeyboardSoundMode,
+        instrument: KeyboardInstrument
+    ) -> String {
+        switch instrument {
+        case .piano:
+            return "\(mode.displayName) · piano profile"
+        case .loFiKeys:
+            return "\(mode.displayName) · fixed lo-fi vibe"
+        }
+    }
+
+    private static func performanceDescription(for plan: SoundTriggerPlan, mode: KeyboardSoundMode) -> String {
+        switch plan.instrument {
+        case .piano:
+            return "\(mode.displayName) · \(plan.performanceStyle.displayName) phrase"
+        case .loFiKeys:
+            return "\(mode.displayName) · \(mode.summary)"
+        }
     }
 }
 
@@ -1139,6 +1297,7 @@ private enum KeyboardSoundPlanner {
     static func plan(
         for input: KeyboardInput,
         instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         tempo: TypingTempoSnapshot,
         textMood: TypingTextMood,
         performanceStyle: KeyboardPerformanceStyle,
@@ -1149,13 +1308,14 @@ private enum KeyboardSoundPlanner {
         let mapping = mappingOverride ?? mapping(
             for: input,
             instrument: instrument,
+            profile: profile,
             tempo: tempo,
             performanceStyle: performanceStyle,
             usageSnapshot: usageSnapshot,
             previousLeadNoteLabel: previousLeadNoteLabel
         )
         let soundID = makeSoundID(
-            instrument: instrument,
+            profile: profile,
             role: mapping.role,
             keyAssetKey: input.symbol.assetKey,
             noteLabel: mapping.noteLabel
@@ -1163,6 +1323,7 @@ private enum KeyboardSoundPlanner {
 
         return SoundTriggerPlan(
             instrument: instrument,
+            profile: profile,
             role: mapping.role,
             soundID: soundID,
             noteLabel: mapping.noteLabel,
@@ -1226,6 +1387,7 @@ private enum KeyboardSoundPlanner {
     private static func mapping(
         for input: KeyboardInput,
         instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle,
         usageSnapshot: AdaptiveKeyUsageSnapshot,
@@ -1240,6 +1402,7 @@ private enum KeyboardSoundPlanner {
                 noteLabel: adaptiveNoteLabel(
                     family: family,
                     instrument: instrument,
+                    profile: profile,
                     keyCode: input.keyCode,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
@@ -1254,9 +1417,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .accent,
                 noteLabel: nearbyPaletteNote(
-                    in: instrument.accentPalette,
+                    in: profile.accentPalette,
                     preferredIndex: index,
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1270,9 +1433,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .cadence,
                 noteLabel: nearbyPaletteNote(
-                    in: instrument.accentPalette,
+                    in: profile.accentPalette,
                     preferredIndex: index,
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1285,7 +1448,7 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .pulse,
                 noteLabel: dynamicPulseNote(
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1298,9 +1461,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .cadence,
                 noteLabel: nearbyPaletteNote(
-                    in: instrument.accentPalette,
-                    preferredIndex: instrument.accentPalette.count - 1,
-                    instrument: instrument,
+                    in: profile.accentPalette,
+                    preferredIndex: profile.accentPalette.count - 1,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1312,7 +1475,7 @@ private enum KeyboardSoundPlanner {
         case .delete, .escape:
             return SoundMapping(
                 role: .tension,
-                noteLabel: instrument.tensionNote,
+                noteLabel: profile.tensionNote,
                 baseVelocity: normalizedVelocity,
                 noteFamilyName: "Tension",
                 learnedRank: nil
@@ -1321,9 +1484,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .texture,
                 noteLabel: nearbyPaletteNote(
-                    in: [instrument.textureNote] + instrument.accentPalette,
+                    in: profile.texturePalette + profile.accentPalette,
                     preferredIndex: 0,
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1337,9 +1500,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .texture,
                 noteLabel: nearbyPaletteNote(
-                    in: instrument.accentPalette,
+                    in: profile.texturePalette + profile.accentPalette,
                     preferredIndex: modifierIndex,
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1353,9 +1516,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .navigation,
                 noteLabel: nearbyPaletteNote(
-                    in: instrument.melodicPalette,
+                    in: profile.melodicPalette,
                     preferredIndex: arrowIndex,
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1368,9 +1531,9 @@ private enum KeyboardSoundPlanner {
             return SoundMapping(
                 role: .accent,
                 noteLabel: nearbyPaletteNote(
-                    in: instrument.accentPalette,
+                    in: profile.accentPalette,
                     preferredIndex: 0,
-                    instrument: instrument,
+                    profile: profile,
                     tempo: tempo,
                     performanceStyle: performanceStyle,
                     previousLeadNoteLabel: previousLeadNoteLabel
@@ -1385,19 +1548,26 @@ private enum KeyboardSoundPlanner {
     private static func adaptiveNoteLabel(
         family: AdaptiveNoteFamily,
         instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         keyCode: UInt16,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle,
         previousLeadNoteLabel: String?
     ) -> String {
-        let candidates = family.noteLabels(for: instrument, performanceStyle: performanceStyle)
+        let candidates: [String]
+        switch instrument {
+        case .piano:
+            candidates = family.noteLabels(for: instrument, performanceStyle: performanceStyle)
+        case .loFiKeys:
+            candidates = family.noteLabels(in: profile)
+        }
         guard !candidates.isEmpty else {
-            return instrument.melodicPalette.first ?? "C4"
+            return profile.melodicPalette.first ?? "C4"
         }
 
         let anchorMidi = preferredAnchorMidi(
             for: keyCode,
-            instrument: instrument,
+            profile: profile,
             tempo: tempo,
             performanceStyle: performanceStyle
         )
@@ -1423,18 +1593,18 @@ private enum KeyboardSoundPlanner {
     }
 
     private static func dynamicPulseNote(
-        instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle,
         previousLeadNoteLabel: String?
     ) -> String {
-        let palette = instrument.supportPalette
+        let palette = profile.supportPalette
         guard let previousLeadNoteLabel,
               let previousMidi = KeyboardNoteFrequency.midiNote(for: previousLeadNoteLabel).map(Int.init) else {
             return defaultPulseNote(
                 in: palette,
                 performanceStyle: performanceStyle,
-                fallback: instrument.pulseNote
+                fallback: profile.supportPalette.first ?? profile.melodicPalette.first ?? "C4"
             )
         }
 
@@ -1450,30 +1620,30 @@ private enum KeyboardSoundPlanner {
                 previousMidi: previousMidi,
                 direction: .down,
                 allowSamePitch: true
-            ) ?? sortedPalette.first ?? instrument.pulseNote
+            ) ?? sortedPalette.first ?? profile.supportPalette.first ?? "C4"
         case .warm:
-            return nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+            return nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? profile.supportPalette.first ?? "C4"
         case .bright:
             return directionalPaletteNote(
                 in: sortedPalette,
                 previousMidi: previousMidi,
                 direction: .up,
                 allowSamePitch: true
-            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? profile.supportPalette.first ?? "C4"
         case .driving:
             return directionalPaletteNote(
                 in: sortedPalette,
                 previousMidi: previousMidi,
                 direction: .up,
                 allowSamePitch: false
-            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? profile.supportPalette.first ?? "C4"
         case .stormy:
             return directionalPaletteNote(
                 in: sortedPalette,
                 previousMidi: previousMidi,
                 direction: .down,
                 allowSamePitch: false
-            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? instrument.pulseNote
+            ) ?? nearestPaletteNote(in: sortedPalette, toMidi: previousMidi) ?? profile.supportPalette.first ?? "C4"
         }
     }
 
@@ -1491,7 +1661,7 @@ private enum KeyboardSoundPlanner {
     private static func nearbyPaletteNote(
         in palette: [String],
         preferredIndex: Int,
-        instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle,
         previousLeadNoteLabel: String?
@@ -1515,7 +1685,7 @@ private enum KeyboardSoundPlanner {
         let anchorMidi = KeyboardNoteFrequency.midiNote(for: palette[normalizedIndex]).map(Int.init) ??
             preferredAnchorMidi(
                 for: 0,
-                instrument: instrument,
+                profile: profile,
                 tempo: tempo,
                 performanceStyle: performanceStyle
             )
@@ -1598,38 +1768,23 @@ private enum KeyboardSoundPlanner {
 
     private static func preferredAnchorMidi(
         for keyCode: UInt16,
-        instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         tempo: TypingTempoSnapshot,
         performanceStyle: KeyboardPerformanceStyle
     ) -> Int {
-        let baseMidi: Int
-        switch instrument {
-        case .piano:
-            switch tempo.intensity {
-            case .idle, .relaxed:
-                baseMidi = 61
-            case .steady:
-                baseMidi = 63
-            case .energetic:
-                baseMidi = 65
-            case .frantic:
-                baseMidi = 66
-            }
-        case .loFiKeys:
-            baseMidi = 57
-        }
+        let baseMidi = profile.anchorBaseMidi + intensityOffset(for: tempo.intensity)
         let column = KeyboardSpatialLayout.column(for: keyCode)
-        return baseMidi + performanceRegisterOffset(for: instrument, performanceStyle: performanceStyle) + (column - 5)
+        return baseMidi + profile.registerBias + performanceRegisterOffset(for: performanceStyle) + (column - 5)
     }
 
     private static func makeSoundID(
-        instrument: KeyboardInstrument,
+        profile: InstrumentProfileSnapshot,
         role: KeyboardSoundRole,
         keyAssetKey: String,
         noteLabel: String
     ) -> String {
         let normalizedNote = noteLabel.lowercased().replacingOccurrences(of: "#", with: "sharp")
-        return "\(instrument.soundPrefix).\(role.rawValue).\(keyAssetKey).\(normalizedNote)"
+        return "\(profile.soundPrefix).\(role.rawValue).\(keyAssetKey).\(normalizedNote)"
     }
 
     private static func alphabetIndex(for character: Character) -> Int {
@@ -1739,14 +1894,7 @@ private enum KeyboardSoundPlanner {
         }
     }
 
-    private static func performanceRegisterOffset(
-        for instrument: KeyboardInstrument,
-        performanceStyle: KeyboardPerformanceStyle
-    ) -> Int {
-        guard instrument == .piano else {
-            return 0
-        }
-
+    private static func performanceRegisterOffset(for performanceStyle: KeyboardPerformanceStyle) -> Int {
         switch performanceStyle {
         case .mellow:
             return -1
@@ -1758,6 +1906,19 @@ private enum KeyboardSoundPlanner {
             return 1
         case .stormy:
             return -1
+        }
+    }
+
+    private static func intensityOffset(for intensity: TypingIntensity) -> Int {
+        switch intensity {
+        case .idle, .relaxed:
+            return 0
+        case .steady:
+            return 1
+        case .energetic:
+            return 2
+        case .frantic:
+            return 3
         }
     }
 
@@ -1912,6 +2073,34 @@ enum AdaptiveNoteFamily {
             return .spark
         default:
             return .tension
+        }
+    }
+
+    func noteLabels(in profile: InstrumentProfileSnapshot) -> [String] {
+        let palette = profile.melodicPalette
+        guard !palette.isEmpty else {
+            return []
+        }
+
+        let middleIndex = palette.count / 2
+        let lower = Array(palette.prefix(max(1, middleIndex)))
+        let upper = Array(palette.suffix(max(1, palette.count - middleIndex)))
+
+        switch self {
+        case .home:
+            return Array(lower.prefix(3)) + Array(upper.prefix(1))
+        case .open:
+            return Array(upper.prefix(4))
+        case .lift:
+            return Array(upper.dropFirst().prefix(4))
+        case .warmth:
+            return Array(lower.suffix(3)) + Array(upper.prefix(1))
+        case .color:
+            return Array(lower.suffix(2)) + Array(upper.prefix(2))
+        case .spark:
+            return Array(upper.suffix(4))
+        case .tension:
+            return [profile.tensionNote] + Array(upper.prefix(2))
         }
     }
 

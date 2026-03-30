@@ -37,9 +37,86 @@ struct NoisyKeysTests {
 
         #expect(plan.role == .melody)
         #expect(plan.noteLabel == "C4")
-        #expect(plan.soundID == "piano.melody.a.c4")
+        #expect(plan.soundID == "piano-warm-felt.melody.a.c4")
+        #expect(plan.profile.displayName == "Warm Felt")
         #expect(plan.noteFamilyName == "Home")
         #expect(plan.learnedRank == 0)
+    }
+
+    @MainActor
+    @Test func presetCatalogsExposeEightProfilesPerInstrument() {
+        #expect(PianoProfileCatalog.all.count == 8)
+        #expect(LoFiProfileCatalog.all.count == 8)
+    }
+
+    @MainActor
+    @Test func soundModesStayLimitedToFourSimpleChoices() {
+        #expect(KeyboardSoundMode.allCases.count == 4)
+        #expect(KeyboardSoundMode.allCases.map(\.displayName) == [
+            "Classic Piano",
+            "Lo-Fi Mellow",
+            "Jazz",
+            "Robot"
+        ])
+    }
+
+    @MainActor
+    @Test func soundModeSwitchChangesInstrumentAndBackingProfile() {
+        var engine = KeyboardMusicEngine(instrument: .piano)
+        engine.setSoundMode(.jazz)
+
+        let jazzPlan = engine.plan(for: KeyboardInput(
+            symbol: .letter("a"),
+            keyCode: 0,
+            source: .localApp,
+            timestamp: Date(timeIntervalSinceReferenceDate: 0)
+        ))
+
+        #expect(jazzPlan.instrument == .piano)
+        #expect(jazzPlan.profile.displayName == "Amber Upright")
+
+        engine.setSoundMode(.robot)
+        let robotPlan = engine.plan(for: KeyboardInput(
+            symbol: .letter("a"),
+            keyCode: 0,
+            source: .localApp,
+            timestamp: Date(timeIntervalSinceReferenceDate: 1)
+        ))
+
+        #expect(robotPlan.instrument == .loFiKeys)
+        #expect(robotPlan.profile.displayName == "Sidewalk Neon")
+    }
+
+    @MainActor
+    @Test func changingLoFiProfileChangesSoundPrefix() {
+        var engine = KeyboardMusicEngine(instrument: .loFiKeys)
+        engine.setCurrentProfile(id: "rain-window")
+
+        let plan = engine.plan(for: KeyboardInput(
+            symbol: .letter("a"),
+            keyCode: 0,
+            source: .localApp,
+            timestamp: Date(timeIntervalSinceReferenceDate: 0)
+        ))
+
+        #expect(plan.profile.displayName == "Rain Window")
+        #expect(plan.soundID.hasPrefix("lofi-rain-window."))
+    }
+
+    @MainActor
+    @Test func changingPianoProfileChangesSoundPrefix() {
+        var engine = KeyboardMusicEngine(instrument: .piano)
+        engine.setCurrentProfile(id: "moonlight")
+
+        let plan = engine.plan(for: KeyboardInput(
+            symbol: .letter("a"),
+            keyCode: 0,
+            source: .localApp,
+            timestamp: Date(timeIntervalSinceReferenceDate: 0)
+        ))
+
+        #expect(plan.profile.displayName == "Moonlight")
+        #expect(plan.soundID.hasPrefix("piano-moonlight."))
     }
 
     @MainActor
@@ -204,7 +281,8 @@ struct NoisyKeysTests {
         #expect(finalPlan?.textMood == .joyful)
         #expect(finalPlan?.performanceStyle == .mellow)
         #expect(finalPlan?.sustainPedalEngaged == true)
-        #expect(engine.performanceDescription.contains("Mellow piano"))
+        #expect(engine.performanceDescription.contains("Classic Piano"))
+        #expect(engine.performanceDescription.contains("Mellow"))
     }
 
     @MainActor
@@ -231,7 +309,8 @@ struct NoisyKeysTests {
         #expect(finalPlan?.textMood == .angry)
         #expect(finalPlan?.performanceStyle == .stormy)
         #expect(finalPlan?.sustainPedalEngaged == false)
-        #expect(engine.performanceDescription.contains("Stormy piano"))
+        #expect(engine.performanceDescription.contains("Classic Piano"))
+        #expect(engine.performanceDescription.contains("Stormy"))
     }
 
     @MainActor
