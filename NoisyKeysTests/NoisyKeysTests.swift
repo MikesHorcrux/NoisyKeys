@@ -23,4 +23,53 @@ struct NoisyKeysTests {
         #expect(!KeyboardEventFilter.shouldPlay(for: .leftMouseDown, isARepeat: false))
     }
 
+    @MainActor
+    @Test func musicEngineMapsLettersToStableSoundSlots() {
+        var engine = KeyboardMusicEngine(instrument: .piano)
+        let input = KeyboardInput(
+            symbol: .letter("a"),
+            keyCode: 0,
+            source: .localApp,
+            timestamp: Date(timeIntervalSinceReferenceDate: 0)
+        )
+
+        let plan = engine.plan(for: input)
+
+        #expect(plan.role == .melody)
+        #expect(plan.noteLabel == "C4")
+        #expect(plan.soundID == "piano.melody.a.c4")
+    }
+
+    @MainActor
+    @Test func cadenceTrackerRaisesIntensityForFastTyping() {
+        var tracker = TypingCadenceTracker()
+
+        _ = tracker.register(at: Date(timeIntervalSinceReferenceDate: 0))
+        let snapshot = tracker.register(at: Date(timeIntervalSinceReferenceDate: 0.3))
+
+        #expect(snapshot.beatsPerMinute == 200)
+        #expect(snapshot.intensity == .energetic)
+    }
+
+    @MainActor
+    @Test func translatorUsesUSANSIKeyCodesForGlobalInputs() {
+        let input = KeyboardInputTranslator.input(
+            for: .keyDown,
+            keyCode: 49,
+            source: .systemWide,
+            timestamp: Date(timeIntervalSinceReferenceDate: 0)
+        )
+
+        #expect(input?.symbol == .space)
+    }
+
+    @Test func noteFrequencyParsesNamedNotes() {
+        let c4 = KeyboardNoteFrequency.hz(for: "C4")
+        let f4 = KeyboardNoteFrequency.hz(for: "F4")
+
+        #expect(c4 != nil)
+        #expect(f4 != nil)
+        #expect(c4! < f4!)
+    }
+
 }

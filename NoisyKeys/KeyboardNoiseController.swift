@@ -5,6 +5,7 @@
 //  Created by Mike  Van Amburg on 3/29/26.
 //
 
+import AVFoundation
 import AppKit
 import CoreGraphics
 import Foundation
@@ -14,11 +15,15 @@ import Observation
 final class KeyboardNoiseController {
     var isNoiseEnabled = true
     var hasGlobalAccess = false
+    var selectedInstrument: KeyboardInstrument = .piano
     var accessMessage = "Checking keyboard access..."
     var lastEventDescription = "Waiting for the first clack."
+    var lastSoundIdentifier = "Waiting for the first mapped sound."
+    var currentTempoDescription = TypingTempoSnapshot.idle.summary
     var totalKeyPresses = 0
 
-    private let player = KeyClickPlayer()
+    private let player = KeyboardSynthPlayer()
+    private var musicEngine = KeyboardMusicEngine()
     private var localMonitor: Any?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
@@ -80,8 +85,13 @@ final class KeyboardNoiseController {
     }
 
     func playTestNoise() {
-        player.play()
-        lastEventDescription = "Manual test fire"
+        let plan = musicEngine.previewPlan(for: .space)
+        applyPlan(plan, countAsKeyPress: false)
+    }
+
+    func setInstrument(_ instrument: KeyboardInstrument) {
+        selectedInstrument = instrument
+        musicEngine.instrument = instrument
     }
 
     private func installLocalMonitorIfNeeded() {
@@ -128,11 +138,9 @@ final class KeyboardNoiseController {
     private func handleLocalEvent(_ event: NSEvent) {
         guard isNoiseEnabled else { return }
         guard eventTap == nil else { return }
-        guard KeyboardEventFilter.shouldPlay(for: event) else { return }
+        guard let input = KeyboardInputTranslator.input(for: event, source: .localApp) else { return }
 
-        totalKeyPresses += 1
-        lastEventDescription = KeyboardEventFilter.describe(event, source: "NoisyKeys")
-        player.play()
+        applyPlan(musicEngine.plan(for: input), countAsKeyPress: true)
     }
 
     private func stop() {
@@ -150,10 +158,9 @@ final class KeyboardNoiseController {
 
         guard isNoiseEnabled else { return }
         guard KeyboardEventFilter.shouldPlay(for: type, isAutoRepeat: isAutoRepeat) else { return }
+        guard let input = KeyboardInputTranslator.input(for: type, keyCode: keyCode, source: .systemWide) else { return }
 
-        totalKeyPresses += 1
-        lastEventDescription = KeyboardEventFilter.describe(type: type, keyCode: keyCode, source: "Everywhere")
-        player.play()
+        applyPlan(musicEngine.plan(for: input), countAsKeyPress: true)
     }
 
     private static let eventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
@@ -195,6 +202,17 @@ final class KeyboardNoiseController {
             CFMachPortInvalidate(eventTap)
             self.eventTap = nil
         }
+    }
+
+    private func applyPlan(_ plan: SoundTriggerPlan, countAsKeyPress: Bool) {
+        if countAsKeyPress {
+            totalKeyPresses += 1
+        }
+
+        currentTempoDescription = plan.tempo.summary
+        lastSoundIdentifier = plan.soundID
+        lastEventDescription = plan.debugSummary
+        player.play(plan)
     }
 }
 
@@ -282,11 +300,5 @@ enum KeyboardEventFilter {
         default:
             "Modifier key \(keyCode)"
         }
-    }
-}
-
-private final class KeyClickPlayer {
-    func play() {
-        NSSound.beep()
     }
 }

@@ -33,6 +33,12 @@ struct ContentView: View {
                     value: "\(controller.totalKeyPresses)",
                     detail: controller.lastEventDescription
                 )
+
+                StatusCard(
+                    title: "Music",
+                    value: controller.selectedInstrument.displayName,
+                    detail: controller.currentTempoDescription
+                )
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -45,6 +51,37 @@ struct ContentView: View {
                     .padding(20)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Sound Mapping")
+                    .font(.headline)
+
+                Picker("Instrument", selection: Binding(
+                    get: { controller.selectedInstrument },
+                    set: { controller.setInstrument($0) }
+                )) {
+                    ForEach(KeyboardInstrument.allCases) { instrument in
+                        Text(instrument.displayName)
+                            .tag(instrument)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Last Sound Slot")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(controller.lastSoundIdentifier)
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                Text("Piano now uses the system instrument bank, and the sound slot string is still the stable hook if we swap to our own packs later.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(20)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
             VStack(alignment: .leading, spacing: 14) {
                 Text("Noise Switch")
@@ -87,7 +124,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(32)
-        .frame(minWidth: 680, minHeight: 420, alignment: .topLeading)
+        .frame(minWidth: 760, minHeight: 520, alignment: .topLeading)
     }
 }
 
