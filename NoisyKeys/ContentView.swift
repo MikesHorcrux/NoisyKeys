@@ -46,6 +46,30 @@ struct ContentView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
 
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Noise Switch")
+                    .font(.headline)
+
+                Toggle(isOn: Binding(
+                    get: { controller.isNoiseEnabled },
+                    set: { controller.setNoiseEnabled($0) }
+                )) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(controller.isNoiseEnabled ? "Keyboard sounds are on" : "Keyboard sounds are off")
+                            .font(.title3.weight(.semibold))
+
+                        Text(controller.isNoiseEnabled
+                             ? "Turn this off when the bit stops being funny."
+                             : "Turn this back on when you want the goblin energy again.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+            }
+            .padding(20)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
             HStack(spacing: 12) {
                 Button("Check Access Again") {
                     controller.refreshAccessStatus(promptIfNeeded: true)

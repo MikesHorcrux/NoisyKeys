@@ -19,12 +19,14 @@ struct NoisyKeysApp: App {
                 }
         }
 
-        MenuBarExtra(
-            "NoisyKeys",
-            systemImage: keyboardNoiseController.isNoiseEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill"
-        ) {
+        MenuBarExtra(isInserted: .constant(true)) {
             MenuBarControlsView(controller: keyboardNoiseController)
+        } label: {
+            Label(
+                "NoisyKeys",
+                systemImage: keyboardNoiseController.isNoiseEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill"
+            )
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
     }
 }
