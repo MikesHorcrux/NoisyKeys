@@ -10,7 +10,7 @@ enum WarmFeltPianoProfile {
     static let profile = PianoSoundProfile(
         id: "warm-felt",
         displayName: "Warm Felt",
-        summary: "Intimate felt piano with warm body and a softer bloom on the tail.",
+        summary: "Soft felt with warm body.",
         soundPrefix: "piano-warm-felt",
         programNumber: 0,
         masterGain: -0.5,

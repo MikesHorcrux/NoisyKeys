@@ -61,15 +61,15 @@ extension KeyboardSoundMode {
     var stickerCopy: String {
         switch self {
         case .grandRoom:
-            "Big shiny concert energy"
+            "Open and bright"
         case .feltBloom:
-            "Soft cozy toy-piano glow"
+            "Warm and soft"
         case .jazzClub:
-            "Bouncy late-night lounge"
+            "Dry and woody"
         case .midnightBlue:
-            "Moody dreamy movie ending"
+            "Dark and calm"
         case .customMix:
-            "Build your own piano potion"
+            "Build your sound"
         }
     }
 }

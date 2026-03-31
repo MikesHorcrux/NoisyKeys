@@ -21,7 +21,7 @@ final class KeyboardNoiseController {
     var selectedProfileID = PianoProfileCatalog.defaultProfile.id
     var selectedProfileDisplayName = PianoProfileCatalog.defaultProfile.displayName
     var selectedProfileSummary = PianoProfileCatalog.defaultProfile.summary
-    var accessMessage = "Checking keyboard access..."
+    var accessMessage = "Checking access..."
     var lastEventDescription = "Waiting for the first clack."
     var lastSoundIdentifier = "Waiting for the first mapped sound."
     var currentTempoDescription = "0 WPM"
@@ -65,10 +65,10 @@ final class KeyboardNoiseController {
 
     var monitoringScope: String {
         if isNoiseEnabled {
-            return hasGlobalAccess ? "System-wide" : "Inside Noisy Keys"
+            return hasGlobalAccess ? "Across your Mac" : "In this app"
         }
 
-        return hasGlobalAccess ? "Off (System-wide ready)" : "Off"
+        return hasGlobalAccess ? "Ready" : "Off"
     }
 
     func start() {
@@ -91,8 +91,8 @@ final class KeyboardNoiseController {
             disableEventTap()
             resetPlaybackState()
             accessMessage = hasGlobalAccess
-                ? "Noise is off. Flip it back on from the menu bar whenever you want more clacks."
-                : "Noise is off. Grant Input Monitoring later if you want system-wide key sounds."
+                ? "Sound is off. Turn it on when you want to use Noisy Keys."
+                : "Sound is off. Allow access later to use Noisy Keys across your Mac."
         }
     }
 
@@ -102,16 +102,16 @@ final class KeyboardNoiseController {
 
         if hasAccess {
             accessMessage = isNoiseEnabled
-                ? "Keyboard listening is active across macOS."
-                : "System-wide access is ready. Noise is currently off."
+                ? "Keyboard access is on across your Mac."
+                : "Access is ready. Sound is off."
             if isNoiseEnabled {
                 installEventTapIfNeeded()
             }
         } else {
             disableEventTap()
             accessMessage = isNoiseEnabled
-                ? "Allow NoisyKeys in System Settings > Privacy & Security > Input Monitoring for system-wide key sounds."
-                : "Noise is off. Allow Input Monitoring later if you want it working across the whole Mac."
+                ? "Allow Noisy Keys in System Settings > Privacy & Security > Input Monitoring."
+                : "Sound is off. Allow Input Monitoring later to use Noisy Keys across your Mac."
         }
     }
 
@@ -210,7 +210,7 @@ final class KeyboardNoiseController {
             callback: Self.eventTapCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            accessMessage = "macOS did not create the keyboard event tap yet. Grant Input Monitoring and try again."
+            accessMessage = "Keyboard access could not start. Allow Input Monitoring and try again."
             return
         }
 

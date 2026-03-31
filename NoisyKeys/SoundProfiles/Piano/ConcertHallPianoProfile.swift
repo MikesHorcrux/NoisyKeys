@@ -10,7 +10,7 @@ enum ConcertHallPianoProfile {
     static let profile = PianoSoundProfile(
         id: "concert-hall",
         displayName: "Concert Hall",
-        summary: "Wide grand piano with a brighter bloom and more room around the notes.",
+        summary: "Bright grand with more room.",
         soundPrefix: "piano-concert-hall",
         programNumber: 0,
         masterGain: 0.4,

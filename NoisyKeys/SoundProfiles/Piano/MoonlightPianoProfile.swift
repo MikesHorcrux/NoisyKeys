@@ -10,7 +10,7 @@ enum MoonlightPianoProfile {
     static let profile = PianoSoundProfile(
         id: "moonlight",
         displayName: "Moonlight",
-        summary: "Dark, cinematic piano with cooler air and a longer late-night resolve.",
+        summary: "Dark piano with a longer tail.",
         soundPrefix: "piano-moonlight",
         programNumber: 2,
         masterGain: -1.1,

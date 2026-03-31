@@ -32,15 +32,15 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .grandRoom:
-            "Open grand piano with a wider room and brighter bloom."
+            "Open grand piano."
         case .feltBloom:
-            "Soft felt piano with warm body and creamy tails."
+            "Warm felt piano."
         case .jazzClub:
-            "Woody upright piano with smoky mids and a tighter bounce."
+            "Woody upright piano."
         case .midnightBlue:
-            "Dark cinematic piano with cooler air and longer resolve."
+            "Dark piano with a longer tail."
         case .customMix:
-            "Choose your own pitch, tone, and vibe."
+            "Adjust pitch, tone, and feel."
         }
     }
 

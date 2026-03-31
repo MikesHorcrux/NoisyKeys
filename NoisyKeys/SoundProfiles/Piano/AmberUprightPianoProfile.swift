@@ -10,7 +10,7 @@ enum AmberUprightPianoProfile {
     static let profile = PianoSoundProfile(
         id: "amber-upright",
         displayName: "Amber Upright",
-        summary: "Woody upright piano with smoky mids, short bounce, and a club-room edge.",
+        summary: "Woody upright with short bounce.",
         soundPrefix: "piano-amber-upright",
         programNumber: 3,
         masterGain: -0.8,

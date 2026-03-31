@@ -17,7 +17,7 @@ struct MenuBarControlsView: View {
     ]
 
     private var topKeyLabel: String {
-        controller.topKeyStats.first?.label ?? "Warm-up"
+        controller.topKeyStats.first?.label ?? "None"
     }
 
     var body: some View {
@@ -79,7 +79,7 @@ private struct MenuBarHeroCard: View {
                         .font(.noisyDisplay(size: 26))
                         .foregroundStyle(Color.inkPrimary)
 
-                    Text(controller.isNoiseEnabled ? "Tiny piano chaos is live." : "Tiny piano chaos is sleeping.")
+                    Text(controller.isNoiseEnabled ? "Keyboard sound is on." : "Keyboard sound is off.")
                         .font(.callout)
                         .foregroundStyle(Color.inkPrimary.opacity(0.70))
                         .fixedSize(horizontal: false, vertical: true)
@@ -132,8 +132,8 @@ private struct MenuBarQuickControlsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             MenuBarSectionHeader(
-                eyebrow: "Quick Controls",
-                title: "Turn it on and poke it"
+                eyebrow: "Controls",
+                title: "Sound"
             )
 
             Toggle(isOn: Binding(
@@ -154,13 +154,13 @@ private struct MenuBarQuickControlsCard: View {
 
             HStack(spacing: 10) {
                 if !controller.hasGlobalAccess {
-                    Button("Enable Access") {
+                    Button("Allow Access") {
                         controller.refreshAccessStatus(promptIfNeeded: true)
                     }
                     .buttonStyle(NoisyArcadeButtonStyle(fill: .butterAccent))
                 }
 
-                Button("Play Test") {
+                Button("Test Sound") {
                     controller.playTestNoise()
                 }
                 .buttonStyle(NoisyArcadeButtonStyle(fill: .tomatoAccent))
@@ -184,8 +184,8 @@ private struct MenuBarModesCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             MenuBarSectionHeader(
-                eyebrow: "Piano Moods",
-                title: "Same vibes, smaller stage"
+                eyebrow: "Sounds",
+                title: "Choose a sound"
             )
 
             LazyVGrid(columns: columns, spacing: 10) {
@@ -210,7 +210,7 @@ private struct MenuBarModesCard: View {
                             Text(mode.displayName)
                                 .font(.subheadline.weight(.bold))
 
-                            Text(mode == .customMix ? "Open in the app to tweak." : mode.stickerCopy)
+                            Text(mode == .customMix ? "Edit in app" : mode.stickerCopy)
                                 .font(.caption)
                                 .foregroundStyle(Color.inkPrimary.opacity(0.66))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -230,7 +230,7 @@ private struct MenuBarFooterRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button("Open Noisy Keys") {
+            Button("Open App") {
                 openApp()
             }
             .buttonStyle(NoisyArcadeButtonStyle(fill: .poolAccent))
@@ -319,4 +319,3 @@ private struct MenuBarBackdrop: View {
         }
     }
 }
-

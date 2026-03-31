@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     let controller: KeyboardNoiseController
 
+    @AppStorage("hasCompletedOnboarding_v3") private var hasCompletedOnboarding = false
     @State private var showsDebugReadouts = false
 
     private let presetColumns = [
@@ -25,42 +26,56 @@ struct ContentView: View {
         ZStack {
             NoisyBackgroundView(mode: controller.selectedSoundMode)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    HeroStageCard(controller: controller)
-
-                    SoundPickerCard(
-                        presetModes: presetModes,
-                        selectedMode: controller.selectedSoundMode,
-                        onSelectMode: controller.setSoundMode
-                    )
-
-                    HStack(alignment: .top, spacing: 18) {
-                        NoiseSwitchCard(controller: controller)
-                            .frame(width: 320)
-
-                        TypingDashboardCard(controller: controller)
-                    }
-
-                    if controller.selectedSoundMode == .customMix {
-                        CustomMixCard(controller: controller)
-                    } else {
-                        PlayGuideCard(controller: controller)
-                    }
-
-                    if NoisyKeysBuildOptions.showsDebugReadouts {
-                        DebugShelf(
-                            isExpanded: $showsDebugReadouts,
-                            controller: controller
-                        )
-                    }
-                }
-                .padding(28)
-                .frame(maxWidth: 980)
-                .frame(maxWidth: .infinity, alignment: .top)
+            if hasCompletedOnboarding {
+                dashboardContent
+                    .transition(.opacity)
+            } else {
+                OnboardingView(
+                    controller: controller,
+                    hasCompletedOnboarding: $hasCompletedOnboarding
+                )
+                .transition(.opacity)
             }
         }
+        .animation(.snappy(duration: 0.26), value: hasCompletedOnboarding)
         .frame(minWidth: 860, minHeight: 680)
+    }
+
+    private var dashboardContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                HeroStageCard(controller: controller)
+
+                SoundPickerCard(
+                    presetModes: presetModes,
+                    selectedMode: controller.selectedSoundMode,
+                    onSelectMode: controller.setSoundMode
+                )
+
+                HStack(alignment: .top, spacing: 18) {
+                    NoiseSwitchCard(controller: controller)
+                        .frame(width: 320)
+
+                    TypingDashboardCard(controller: controller)
+                }
+
+                if controller.selectedSoundMode == .customMix {
+                    CustomMixCard(controller: controller)
+                } else {
+                    PlayGuideCard(controller: controller)
+                }
+
+                if NoisyKeysBuildOptions.showsDebugReadouts {
+                    DebugShelf(
+                        isExpanded: $showsDebugReadouts,
+                        controller: controller
+                    )
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: 980)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
     }
 }
 
@@ -70,7 +85,7 @@ private struct HeroStageCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 26) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Tiny piano chaos for all ages")
+                Text("Piano for your keyboard")
                     .font(.caption.weight(.bold))
                     .kerning(1.4)
                     .textCase(.uppercase)
@@ -80,7 +95,7 @@ private struct HeroStageCard: View {
                     .font(.noisyDisplay(size: 54))
                     .foregroundStyle(Color.inkPrimary)
 
-                Text("A silly little piano toy for your keyboard. Fun for kids, charming for adults, and simple enough to start using right away.")
+                Text("Turn typing into piano sound. Pick a sound, turn it on, and play.")
                     .font(.title3)
                     .foregroundStyle(Color.inkPrimary.opacity(0.80))
                     .fixedSize(horizontal: false, vertical: true)
@@ -148,12 +163,12 @@ private struct StageMonitorCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Mini Stage")
+                Text("Preview")
                     .font(.headline)
 
                 Spacer()
 
-                Text(isEnabled ? "LIVE" : "NAP")
+                Text(isEnabled ? "ON" : "OFF")
                     .font(.caption.weight(.bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -172,8 +187,8 @@ private struct StageMonitorCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(isEnabled
-                 ? "Fast typing should feel like a playful streak, not a panic attack."
-                 : "Wake it back up when you want the keyboard acting ridiculous again.")
+                 ? "Type to hear the current sound."
+                 : "Turn sound on to hear your keyboard.")
                 .font(.callout)
                 .foregroundStyle(Color.inkPrimary.opacity(0.62))
                 .fixedSize(horizontal: false, vertical: true)
@@ -198,9 +213,9 @@ private struct SoundPickerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SectionTitle(
-                eyebrow: "Choose your piano mood",
-                title: "Pick a preset or make your own",
-                detail: "The four presets are the quick good choices. Custom Mix lets you mess with the piano without turning the app into a cockpit."
+                eyebrow: "Sound",
+                title: "Choose a sound",
+                detail: "Four presets and one custom option."
             )
 
             LazyVGrid(columns: [
@@ -247,7 +262,7 @@ private struct SoundModeButton: View {
 
                     Spacer()
 
-                    Text(isSelected ? "LIVE" : "TAP")
+                    Text(isSelected ? "ON" : "SELECT")
                         .font(.caption.weight(.bold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -297,14 +312,14 @@ private struct CustomMixStrip: View {
                     Text("Custom Mix")
                         .font(.title3.weight(.bold))
 
-                    Text("Choose your own pitch, tone, and vibe.")
+                    Text("Adjust pitch, tone, and feel.")
                         .font(.callout)
                         .foregroundStyle(Color.inkPrimary.opacity(0.68))
                 }
 
                 Spacer()
 
-                Text(isSelected ? "LIVE" : "OPEN")
+                Text(isSelected ? "ON" : "EDIT")
                     .font(.caption.weight(.bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
@@ -324,9 +339,9 @@ private struct NoiseSwitchCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SectionTitle(
-                eyebrow: "Power",
+                eyebrow: "Sound",
                 title: "Keyboard sound",
-                detail: controller.hasGlobalAccess ? "" : "Finish setup to use Noisy Keys anywhere on your Mac."
+                detail: controller.hasGlobalAccess ? "" : "Allow access to use Noisy Keys across your Mac."
             )
 
             Toggle(isOn: Binding(
@@ -341,13 +356,13 @@ private struct NoiseSwitchCard: View {
 
             HStack(spacing: 12) {
                 if !controller.hasGlobalAccess {
-                    Button("Enable Access") {
+                    Button("Allow Access") {
                         controller.refreshAccessStatus(promptIfNeeded: true)
                     }
                     .buttonStyle(NoisyArcadeButtonStyle(fill: .butterAccent))
                 }
 
-                Button("Play Test") {
+                Button("Test Sound") {
                     controller.playTestNoise()
                 }
                 .buttonStyle(NoisyArcadeButtonStyle(fill: .tomatoAccent))
@@ -373,22 +388,22 @@ private struct TypingDashboardCard: View {
 
     private var sessionSummary: String {
         guard !controller.topKeyStats.isEmpty else {
-            return "Type a little and your most-used keys will light up here."
+            return "Type to see your top keys."
         }
 
         let favorites = controller.topKeyStats
             .prefix(5)
             .map { "\($0.label)\($0.count)" }
             .joined(separator: " · ")
-        return "Session favorites: \(favorites)"
+        return "Top keys: \(favorites)"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SectionTitle(
-                eyebrow: "Typing Dashboard",
-                title: "Your keyboard habits",
-                detail: "A tiny playful dashboard for speed, streak, and the keys you hit the most."
+                eyebrow: "Typing",
+                title: "Your session",
+                detail: "Speed, total taps, and top keys."
             )
 
             HStack(spacing: 12) {
@@ -406,7 +421,7 @@ private struct TypingDashboardCard: View {
 
                 DashboardStat(
                     title: "Top Key",
-                    value: champion.map { "\($0.label) \($0.count)" } ?? "Warming up",
+                    value: champion.map { "\($0.label) \($0.count)" } ?? "None yet",
                     tint: .mintAccent
                 )
             }
@@ -428,31 +443,31 @@ private struct PlayGuideCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SectionTitle(
-                eyebrow: "How it works",
-                title: "Keep the toy-piano energy, lose the chaos",
-                detail: "The presets stay playful, but the piano engine underneath is still trying to stay smooth and musical."
+                eyebrow: "Tips",
+                title: "Quick tips",
+                detail: "Keep it simple."
             )
 
             HStack(alignment: .top, spacing: 14) {
                 GuideRow(
                     tint: controller.selectedSoundMode.accentColor,
                     icon: "music.note.house.fill",
-                    title: "Pick one mood and stay there",
-                    detail: controller.selectedSoundMode.displayName + " keeps one clear piano vibe instead of flipping around too fast."
+                    title: "Stay with one sound",
+                    detail: controller.selectedSoundMode.displayName + " stays active until you change it."
                 )
 
                 GuideRow(
                     tint: .mintAccent,
                     icon: "keyboard.fill",
-                    title: "Type like normal",
-                    detail: "Slow typing should feel softer. Fast typing should feel more excited without turning into soup."
+                    title: "Type normally",
+                    detail: "Slow typing stays soft. Fast typing stays clear."
                 )
 
                 GuideRow(
                     tint: .poolAccent,
                     icon: "hand.tap.fill",
-                    title: "Use Test Noise when in doubt",
-                    detail: "If the Mac goes quiet, tap the test button first. That tells you whether the piano path is alive."
+                    title: "Test if it goes quiet",
+                    detail: "Use Test Sound to check the audio path."
                 )
             }
         }
@@ -466,8 +481,8 @@ private struct CustomMixCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SectionTitle(
-                eyebrow: "Custom Mix",
-                title: "Build your own piano potion",
+                eyebrow: "Custom",
+                title: "Shape your sound",
                 detail: controller.customPianoSettings.summary
             )
 
@@ -513,7 +528,7 @@ private struct DebugShelf: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button(isExpanded ? "Hide Debug Stuff" : "Show Debug Stuff") {
+            Button(isExpanded ? "Hide Debug" : "Show Debug") {
                 isExpanded.toggle()
             }
             .buttonStyle(NoisyArcadeButtonStyle(fill: .softOutline))
@@ -533,8 +548,8 @@ private struct DebugReadoutCard: View {
         VStack(alignment: .leading, spacing: 14) {
             SectionTitle(
                 eyebrow: "Debug",
-                title: "Nerdy piano readouts",
-                detail: "Kept out of the product view unless you explicitly open it."
+                title: "Debug info",
+                detail: "Only shown in debug builds."
             )
 
             LazyVGrid(columns: [
@@ -804,7 +819,7 @@ private struct SignalMeter: View {
 
             HStack(spacing: 8) {
                 Image(systemName: "music.note")
-                Text("tap tap tap")
+                Text("live")
             }
             .font(.caption.weight(.bold))
             .foregroundStyle(Color.inkPrimary.opacity(0.70))
@@ -839,7 +854,7 @@ private struct KeyboardHeatMap: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Hot Keys")
+            Text("Top Keys")
                 .font(.caption.weight(.bold))
                 .kerning(1)
                 .textCase(.uppercase)

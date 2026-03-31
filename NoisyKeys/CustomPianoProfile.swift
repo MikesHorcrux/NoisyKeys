@@ -27,11 +27,11 @@ enum CustomPianoPitch: String, CaseIterable, Identifiable, CustomStringConvertib
     var summary: String {
         switch self {
         case .low:
-            "Deeper keys and more body."
+            "Lower range."
         case .balanced:
-            "Natural middle register."
+            "Middle range."
         case .high:
-            "Lighter and more lifted."
+            "Higher range."
         }
     }
 
@@ -81,11 +81,11 @@ enum CustomPianoTone: String, CaseIterable, Identifiable, CustomStringConvertibl
     var summary: String {
         switch self {
         case .soft:
-            "Rounder attack and gentler air."
+            "Softer attack."
         case .warm:
-            "Balanced body and bloom."
+            "Balanced body."
         case .bright:
-            "Extra sparkle and bite."
+            "Brighter tone."
         }
     }
 
@@ -182,13 +182,13 @@ enum CustomPianoVibe: String, CaseIterable, Identifiable, CustomStringConvertibl
     var summary: String {
         switch self {
         case .cozy:
-            "Soft and tucked in."
+            "Soft and close."
         case .playful:
-            "Open and cheerful."
+            "Light and open."
         case .lounge:
-            "Smoky and bouncy."
+            "Dry and warm."
         case .dreamy:
-            "Dark and floaty."
+            "Dark and airy."
         }
     }
 
@@ -216,7 +216,7 @@ struct CustomPianoSettings: Equatable {
     static let `default` = CustomPianoSettings()
 
     var summary: String {
-        "\(tone.displayName) \(vibe.displayName.lowercased()) piano with a \(pitch.displayName.lowercased()) register."
+        "\(tone.displayName) tone, \(vibe.displayName.lowercased()) feel, \(pitch.displayName.lowercased()) range."
     }
 }
 
