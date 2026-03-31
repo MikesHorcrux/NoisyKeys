@@ -22,11 +22,14 @@ struct NoisyKeysApp: App {
         MenuBarExtra(isInserted: .constant(true)) {
             MenuBarControlsView(controller: keyboardNoiseController)
         } label: {
-            Label(
-                "NoisyKeys",
-                systemImage: keyboardNoiseController.isNoiseEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill"
-            )
+            Image(nsImage: NoisyMenuBarStatusImage.make(isEnabled: keyboardNoiseController.isNoiseEnabled))
+                .renderingMode(.template)
+                .frame(width: 18, height: 14)
+                .help("Noisy Keys")
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 388, height: 520)
+        .windowResizability(.contentSize)
     }
 }

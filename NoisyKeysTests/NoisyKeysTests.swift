@@ -50,13 +50,14 @@ struct NoisyKeysTests {
     }
 
     @MainActor
-    @Test func soundModesStayLimitedToFourSimpleChoices() {
-        #expect(KeyboardSoundMode.allCases.count == 4)
+    @Test func soundModesStayLimitedToFiveSimpleChoices() {
+        #expect(KeyboardSoundMode.allCases.count == 5)
         #expect(KeyboardSoundMode.allCases.map(\.displayName) == [
             "Grand Room",
             "Felt Bloom",
             "Jazz Club",
-            "Midnight Blue"
+            "Midnight Blue",
+            "Custom Mix"
         ])
     }
 
@@ -117,6 +118,31 @@ struct NoisyKeysTests {
 
         #expect(plan.profile.displayName == "Moonlight")
         #expect(plan.soundID.hasPrefix("piano-moonlight."))
+    }
+
+    @MainActor
+    @Test func customMixBuildsDynamicPianoProfile() {
+        var engine = KeyboardMusicEngine(instrument: .piano)
+        engine.setSoundMode(.customMix)
+        engine.setCustomPianoSettings(
+            CustomPianoSettings(
+                pitch: .high,
+                tone: .bright,
+                vibe: .dreamy
+            )
+        )
+
+        let plan = engine.plan(for: KeyboardInput(
+            symbol: .letter("a"),
+            keyCode: 0,
+            source: .localApp,
+            timestamp: Date(timeIntervalSinceReferenceDate: 0)
+        ))
+
+        #expect(plan.profile.displayName == "Custom Mix")
+        #expect(plan.profile.id == CustomPianoProfileBuilder.profileID)
+        #expect(engine.currentSoundMode == .customMix)
+        #expect(engine.currentCustomPianoSettings.vibe == .dreamy)
     }
 
     @MainActor
@@ -411,6 +437,35 @@ struct NoisyKeysTests {
 
         #expect(snapshot.beatsPerMinute == 200)
         #expect(snapshot.intensity == .energetic)
+    }
+
+    @MainActor
+    @Test func dashboardTrackerEstimatesWordsPerMinuteFromTypedCharacters() {
+        var tracker = TypingDashboardTracker()
+
+        _ = tracker.register(symbol: .letter("h"), at: Date(timeIntervalSinceReferenceDate: 0))
+        _ = tracker.register(symbol: .letter("e"), at: Date(timeIntervalSinceReferenceDate: 0.5))
+        _ = tracker.register(symbol: .letter("l"), at: Date(timeIntervalSinceReferenceDate: 1.0))
+        _ = tracker.register(symbol: .letter("l"), at: Date(timeIntervalSinceReferenceDate: 1.5))
+        let snapshot = tracker.register(symbol: .letter("o"), at: Date(timeIntervalSinceReferenceDate: 2.0))
+
+        #expect(snapshot.wordsPerMinute == 20)
+    }
+
+    @MainActor
+    @Test func dashboardTrackerIgnoresModifiersAndTracksSessionHotKeys() {
+        var tracker = TypingDashboardTracker()
+
+        _ = tracker.register(symbol: .modifier(.shift), at: Date(timeIntervalSinceReferenceDate: 0))
+        _ = tracker.register(symbol: .letter("a"), at: Date(timeIntervalSinceReferenceDate: 0.2))
+        _ = tracker.register(symbol: .modifier(.shift), at: Date(timeIntervalSinceReferenceDate: 0.4))
+        _ = tracker.register(symbol: .letter("a"), at: Date(timeIntervalSinceReferenceDate: 0.6))
+        let snapshot = tracker.register(symbol: .letter("s"), at: Date(timeIntervalSinceReferenceDate: 0.8))
+
+        #expect(snapshot.wordsPerMinute == 12)
+        #expect(snapshot.topKeys.first?.label == "A")
+        #expect(snapshot.topKeys.first?.count == 2)
+        #expect(snapshot.topKeys.contains(where: { $0.label == "S" && $0.count == 1 }))
     }
 
     @MainActor

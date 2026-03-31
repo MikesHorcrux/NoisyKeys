@@ -212,6 +212,26 @@ enum KeyboardSymbol: Hashable {
         }
     }
 
+    var dashboardCharacterDelta: Int {
+        switch self {
+        case .letter, .number, .punctuation, .space, .tab:
+            1
+        case .delete:
+            -1
+        case .returnKey, .escape, .modifier, .arrow, .unknown:
+            0
+        }
+    }
+
+    var dashboardHeatKeyID: String? {
+        switch self {
+        case .letter(let character):
+            String(character).lowercased()
+        default:
+            nil
+        }
+    }
+
     var contributesToBurstIdentity: Bool {
         switch self {
         case .letter, .number, .punctuation:
@@ -410,11 +430,13 @@ struct KeyboardMusicEngine {
 
     private var burstTracker = TypingBurstTracker()
     private var cadenceTracker = TypingCadenceTracker()
+    private var dashboardTracker = TypingDashboardTracker()
     private var usageProfile: AdaptiveKeyLearningProfile
     private var expressionTracker = TypingExpressionTracker()
     private var performanceBurstLock = TypingPerformanceBurstLock()
     private var pianoPhraseTracker = PianoPhraseTracker()
     private var pianoProfile = PianoProfileCatalog.defaultProfile
+    private var customPianoSettings = CustomPianoSettings.default
     private var loFiProfile = LoFiProfileCatalog.defaultProfile
     private var soundMode = KeyboardSoundMode.feltBloom
     private var lastLeadNoteLabel: String?
@@ -422,6 +444,7 @@ struct KeyboardMusicEngine {
     private(set) var learnedKeysSummary: String
     private(set) var adaptiveMappingDescription: String
     private(set) var performanceDescription: String
+    private(set) var dashboardSpeedSummary = "0 WPM"
 
     init(instrument: KeyboardInstrument = .piano, persistentLearning: Bool = false) {
         self.instrument = instrument
@@ -438,6 +461,8 @@ struct KeyboardMusicEngine {
             pianoProfile = AmberUprightPianoProfile.profile
         case .midnightBlue:
             pianoProfile = MoonlightPianoProfile.profile
+        case .customMix:
+            pianoProfile = CustomPianoProfileBuilder.makeProfile(from: customPianoSettings)
         }
         usageProfile = AdaptiveKeyLearningProfile(persistentLearning: persistentLearning)
         learnedKeysSummary = usageProfile.topKeysSummary
@@ -455,6 +480,16 @@ struct KeyboardMusicEngine {
     var selectedLoFiProfile: LoFiSoundProfile { loFiProfile }
 
     var currentSoundMode: KeyboardSoundMode { soundMode }
+
+    var currentCustomPianoSettings: CustomPianoSettings { customPianoSettings }
+
+    var topKeyStats: [AdaptiveKeyStat] {
+        dashboardTracker.topKeyStats
+    }
+
+    var lastTempoSnapshot: TypingTempoSnapshot {
+        lastTempo
+    }
 
     var availableSoundModes: [KeyboardSoundMode] {
         KeyboardSoundMode.allCases
@@ -492,6 +527,7 @@ struct KeyboardMusicEngine {
         }
 
         let tempo = cadenceTracker.register(at: input.timestamp)
+        let dashboardSnapshot = dashboardTracker.register(symbol: input.symbol, at: input.timestamp)
         let usageSnapshot = usageProfile.register(symbol: input.symbol)
         let expressionSnapshot = expressionTracker.register(symbol: input.symbol)
         let burstPerformance = performanceBurstLock.resolve(
@@ -528,6 +564,10 @@ struct KeyboardMusicEngine {
         learnedKeysSummary = usageProfile.topKeysSummary
         adaptiveMappingDescription = usageProfile.description(for: input.symbol, snapshot: usageSnapshot)
         performanceDescription = Self.performanceDescription(for: plan, mode: soundMode)
+        dashboardSpeedSummary = Self.dashboardSpeedSummary(
+            wordsPerMinute: dashboardSnapshot.wordsPerMinute,
+            intensity: tempo.intensity
+        )
         return plan
     }
 
@@ -598,6 +638,9 @@ struct KeyboardMusicEngine {
         case .midnightBlue:
             instrument = .piano
             pianoProfile = MoonlightPianoProfile.profile
+        case .customMix:
+            instrument = .piano
+            pianoProfile = CustomPianoProfileBuilder.makeProfile(from: customPianoSettings)
         }
 
         resetCurrentInstrumentState()
@@ -613,11 +656,24 @@ struct KeyboardMusicEngine {
     }
 
     mutating func setPianoProfile(_ id: String) {
-        pianoProfile = PianoProfileCatalog.profile(for: id)
+        if id == CustomPianoProfileBuilder.profileID {
+            pianoProfile = CustomPianoProfileBuilder.makeProfile(from: customPianoSettings)
+        } else {
+            pianoProfile = PianoProfileCatalog.profile(for: id)
+        }
         soundMode = KeyboardSoundMode.preferredMode(for: .piano, profileID: pianoProfile.id)
         if instrument == .piano {
             resetCurrentInstrumentState()
         }
+    }
+
+    mutating func setCustomPianoSettings(_ settings: CustomPianoSettings) {
+        customPianoSettings = settings
+        guard instrument == .piano else { return }
+        guard soundMode == .customMix else { return }
+
+        pianoProfile = CustomPianoProfileBuilder.makeProfile(from: settings)
+        resetCurrentInstrumentState()
     }
 
     mutating func setLoFiProfile(_ id: String) {
@@ -674,6 +730,14 @@ struct KeyboardMusicEngine {
         case .loFiKeys:
             return "\(mode.displayName) · \(mode.summary)"
         }
+    }
+
+    private static func dashboardSpeedSummary(wordsPerMinute: Int, intensity: TypingIntensity) -> String {
+        guard wordsPerMinute > 0 else {
+            return "0 WPM"
+        }
+
+        return "\(wordsPerMinute) WPM · \(intensity.displayName)"
     }
 }
 
@@ -735,6 +799,92 @@ struct TypingCadenceTracker {
 
     mutating func reset() {
         timestamps.removeAll(keepingCapacity: true)
+    }
+}
+
+struct TypingDashboardSnapshot: Equatable {
+    let wordsPerMinute: Int
+    let topKeys: [AdaptiveKeyStat]
+}
+
+struct TypingDashboardTracker {
+    private struct DashboardEvent {
+        let timestamp: Date
+        let delta: Int
+    }
+
+    private var recentEvents: [DashboardEvent] = []
+    private var sessionLetterCounts: [String: Int] = [:]
+    private let rollingWindow: TimeInterval = 18
+    private let minimumMeasurementWindow: TimeInterval = 3
+
+    var topKeyStats: [AdaptiveKeyStat] {
+        rankedKeys(prefix: 8)
+    }
+
+    mutating func register(symbol: KeyboardSymbol, at timestamp: Date) -> TypingDashboardSnapshot {
+        if let heatKeyID = symbol.dashboardHeatKeyID {
+            sessionLetterCounts[heatKeyID, default: 0] += 1
+        }
+
+        let delta = symbol.dashboardCharacterDelta
+        if delta != 0 {
+            recentEvents.append(DashboardEvent(timestamp: timestamp, delta: delta))
+        }
+
+        prune(before: timestamp.addingTimeInterval(-rollingWindow))
+        return snapshot()
+    }
+
+    private mutating func prune(before cutoff: Date) {
+        recentEvents.removeAll { $0.timestamp < cutoff }
+    }
+
+    private func snapshot() -> TypingDashboardSnapshot {
+        let charactersTyped = max(0, recentEvents.reduce(0) { $0 + $1.delta })
+        let measuredDuration: TimeInterval
+
+        if let first = recentEvents.first?.timestamp,
+           let last = recentEvents.last?.timestamp {
+            measuredDuration = max(minimumMeasurementWindow, last.timeIntervalSince(first))
+        } else {
+            measuredDuration = minimumMeasurementWindow
+        }
+
+        let wordsPerMinute: Int
+        if charactersTyped == 0 {
+            wordsPerMinute = 0
+        } else {
+            let wordsTyped = Double(charactersTyped) / 5.0
+            let minutes = measuredDuration / 60.0
+            wordsPerMinute = max(0, min(Int((wordsTyped / minutes).rounded()), 220))
+        }
+
+        return TypingDashboardSnapshot(
+            wordsPerMinute: wordsPerMinute,
+            topKeys: rankedKeys(prefix: 8)
+        )
+    }
+
+    private func rankedKeys(prefix limit: Int) -> [AdaptiveKeyStat] {
+        Array(
+            sessionLetterCounts
+                .map { key, count in
+                    AdaptiveKeyStat(
+                        id: key,
+                        label: key.uppercased(),
+                        count: count
+                    )
+                }
+                .sorted { lhs, rhs in
+                    if lhs.count != rhs.count {
+                        return lhs.count > rhs.count
+                    }
+
+                    return lhs.label < rhs.label
+                }
+                .prefix(limit)
+        )
     }
 }
 
@@ -1068,6 +1218,10 @@ private struct AdaptiveKeyLearningProfile {
         return top
             .map { "\($0.label)\($0.count)" }
             .joined(separator: " · ")
+    }
+
+    var topKeyStats: [AdaptiveKeyStat] {
+        Array(rankedKeys.prefix(8))
     }
 
     var defaultDescription: String {

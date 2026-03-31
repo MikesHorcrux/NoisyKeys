@@ -10,6 +10,7 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
     case feltBloom
     case jazzClub
     case midnightBlue
+    case customMix
 
     var id: String { rawValue }
 
@@ -23,6 +24,8 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
             "Jazz Club"
         case .midnightBlue:
             "Midnight Blue"
+        case .customMix:
+            "Custom Mix"
         }
     }
 
@@ -36,6 +39,8 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
             "Woody upright piano with smoky mids and a tighter bounce."
         case .midnightBlue:
             "Dark cinematic piano with cooler air and longer resolve."
+        case .customMix:
+            "Choose your own pitch, tone, and vibe."
         }
     }
 
@@ -53,6 +58,8 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
             AmberUprightPianoProfile.profile.id
         case .midnightBlue:
             MoonlightPianoProfile.profile.id
+        case .customMix:
+            CustomPianoProfileBuilder.profileID
         }
     }
 

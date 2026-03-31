@@ -24,29 +24,39 @@ final class KeyboardNoiseController {
     var accessMessage = "Checking keyboard access..."
     var lastEventDescription = "Waiting for the first clack."
     var lastSoundIdentifier = "Waiting for the first mapped sound."
-    var currentTempoDescription = TypingTempoSnapshot.idle.summary
+    var currentTempoDescription = "0 WPM"
     var learnedKeysDescription = "Learning your letter habits."
     var adaptiveMappingDescription = "Frequent letters will settle into the safest note families."
     var performanceDescription = "Warm piano · neutral tone"
     var totalKeyPresses = 0
+    var topKeyStats: [AdaptiveKeyStat] = []
+    var customPianoSettings = CustomPianoSettings.default
 
     private let player = KeyboardSynthPlayer()
+    private let playbackQueue = DispatchQueue(label: "NoisyKeys.Playback")
     private var musicEngine = KeyboardMusicEngine(persistentLearning: true)
     private var localMonitor: Any?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
     private var hasStarted = false
+    private var processedKeyPresses = 0
+    private var pendingDisplayState: ControllerDisplayState?
+    private var displayRefreshWorkItem: DispatchWorkItem?
+    private let displayRefreshInterval: TimeInterval = 0.08
 
     init() {
-        selectedInstrument = musicEngine.instrument
-        selectedSoundMode = musicEngine.currentSoundMode
-        selectedSoundModeSummary = musicEngine.currentSoundMode.summary
-        selectedProfileID = musicEngine.currentProfileID
-        selectedProfileDisplayName = musicEngine.currentProfileDisplayName
-        selectedProfileSummary = musicEngine.currentProfileSummary
-        learnedKeysDescription = musicEngine.learnedKeysSummary
-        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
-        performanceDescription = musicEngine.performanceDescription
+        let selectionState = makeSelectionState()
+        selectedInstrument = selectionState.instrument
+        selectedSoundMode = selectionState.soundMode
+        selectedSoundModeSummary = selectionState.soundModeSummary
+        selectedProfileID = selectionState.profileID
+        selectedProfileDisplayName = selectionState.profileDisplayName
+        selectedProfileSummary = selectionState.profileSummary
+        learnedKeysDescription = selectionState.learnedKeysDescription
+        adaptiveMappingDescription = selectionState.adaptiveMappingDescription
+        performanceDescription = selectionState.performanceDescription
+        topKeyStats = selectionState.topKeyStats
+        customPianoSettings = selectionState.customPianoSettings
     }
 
     deinit {
@@ -55,7 +65,7 @@ final class KeyboardNoiseController {
 
     var monitoringScope: String {
         if isNoiseEnabled {
-            return hasGlobalAccess ? "System-wide" : "Inside NoisyKeys"
+            return hasGlobalAccess ? "System-wide" : "Inside Noisy Keys"
         }
 
         return hasGlobalAccess ? "Off (System-wide ready)" : "Off"
@@ -79,7 +89,7 @@ final class KeyboardNoiseController {
         } else {
             removeLocalMonitor()
             disableEventTap()
-            player.resetPerformanceState()
+            resetPlaybackState()
             accessMessage = hasGlobalAccess
                 ? "Noise is off. Flip it back on from the menu bar whenever you want more clacks."
                 : "Noise is off. Grant Input Monitoring later if you want system-wide key sounds."
@@ -106,44 +116,69 @@ final class KeyboardNoiseController {
     }
 
     func playTestNoise() {
-        let plan = musicEngine.previewPlan(for: .space)
-        applyPlan(plan, countAsKeyPress: false)
+        playbackQueue.async { [weak self] in
+            guard let self else { return }
+
+            let plan = self.musicEngine.previewPlan(for: .space)
+            self.player.play(plan)
+            let displayState = self.makeDisplayState(for: plan, totalKeyPresses: self.processedKeyPresses)
+            self.enqueueDisplayState(displayState, immediate: true)
+        }
     }
 
     var availableSoundModes: [KeyboardSoundMode] {
-        musicEngine.availableSoundModes
+        KeyboardSoundMode.allCases
     }
 
     var availableProfiles: [ProfileOption] {
-        musicEngine.availableProfileOptions
+        playbackQueue.sync {
+            musicEngine.availableProfileOptions
+        }
     }
 
     func setInstrument(_ instrument: KeyboardInstrument) {
-        player.resetPerformanceState()
-        selectedInstrument = instrument
-        musicEngine.setInstrument(instrument)
-        syncSelectionState()
-        learnedKeysDescription = musicEngine.learnedKeysSummary
-        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
-        performanceDescription = musicEngine.performanceDescription
+        let selectionState = playbackQueue.sync { [self] in
+            player.resetPerformanceState()
+            musicEngine.setInstrument(instrument)
+            return makeSelectionState()
+        }
+        applySelectionState(selectionState)
     }
 
     func setSoundMode(_ mode: KeyboardSoundMode) {
-        player.resetPerformanceState()
-        musicEngine.setSoundMode(mode)
-        syncSelectionState()
-        learnedKeysDescription = musicEngine.learnedKeysSummary
-        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
-        performanceDescription = musicEngine.performanceDescription
+        let selectionState = playbackQueue.sync { [self] in
+            player.resetPerformanceState()
+            musicEngine.setSoundMode(mode)
+            return makeSelectionState()
+        }
+        applySelectionState(selectionState)
     }
 
     func setProfile(id: String) {
-        player.resetPerformanceState()
-        musicEngine.setCurrentProfile(id: id)
-        syncSelectionState()
-        learnedKeysDescription = musicEngine.learnedKeysSummary
-        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
-        performanceDescription = musicEngine.performanceDescription
+        let selectionState = playbackQueue.sync { [self] in
+            player.resetPerformanceState()
+            musicEngine.setCurrentProfile(id: id)
+            return makeSelectionState()
+        }
+        applySelectionState(selectionState)
+    }
+
+    func setCustomPianoPitch(_ pitch: CustomPianoPitch) {
+        var settings = customPianoSettings
+        settings.pitch = pitch
+        updateCustomPianoSettings(settings)
+    }
+
+    func setCustomPianoTone(_ tone: CustomPianoTone) {
+        var settings = customPianoSettings
+        settings.tone = tone
+        updateCustomPianoSettings(settings)
+    }
+
+    func setCustomPianoVibe(_ vibe: CustomPianoVibe) {
+        var settings = customPianoSettings
+        settings.vibe = vibe
+        updateCustomPianoSettings(settings)
     }
 
     private func installLocalMonitorIfNeeded() {
@@ -192,7 +227,7 @@ final class KeyboardNoiseController {
         guard eventTap == nil else { return }
         guard let input = KeyboardInputTranslator.input(for: event, source: .localApp) else { return }
 
-        applyPlan(musicEngine.plan(for: input), countAsKeyPress: true)
+        process(input, countAsKeyPress: true)
     }
 
     private func stop() {
@@ -212,7 +247,7 @@ final class KeyboardNoiseController {
         guard KeyboardEventFilter.shouldPlay(for: type, isAutoRepeat: isAutoRepeat) else { return }
         guard let input = KeyboardInputTranslator.input(for: type, keyCode: keyCode, source: .systemWide) else { return }
 
-        applyPlan(musicEngine.plan(for: input), countAsKeyPress: true)
+        process(input, countAsKeyPress: true)
     }
 
     private static let eventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
@@ -224,7 +259,7 @@ final class KeyboardNoiseController {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
 
-        DispatchQueue.main.async {
+        controller.playbackQueue.async {
             controller.handleEventTap(type: type, keyCode: keyCode, isAutoRepeat: isAutoRepeat)
         }
 
@@ -256,28 +291,140 @@ final class KeyboardNoiseController {
         }
     }
 
-    private func applyPlan(_ plan: SoundTriggerPlan, countAsKeyPress: Bool) {
-        if countAsKeyPress {
-            totalKeyPresses += 1
+    private func process(_ input: KeyboardInput, countAsKeyPress: Bool) {
+        playbackQueue.async { [weak self] in
+            guard let self else { return }
+
+            if countAsKeyPress {
+                self.processedKeyPresses += 1
+            }
+
+            let plan = self.musicEngine.plan(for: input)
+            self.player.play(plan)
+            let displayState = self.makeDisplayState(for: plan, totalKeyPresses: self.processedKeyPresses)
+            self.enqueueDisplayState(displayState)
         }
-
-        currentTempoDescription = plan.tempo.summary
-        lastSoundIdentifier = plan.soundID
-        lastEventDescription = plan.debugSummary
-        learnedKeysDescription = musicEngine.learnedKeysSummary
-        adaptiveMappingDescription = musicEngine.adaptiveMappingDescription
-        performanceDescription = musicEngine.performanceDescription
-        player.play(plan)
     }
 
-    private func syncSelectionState() {
-        selectedInstrument = musicEngine.instrument
-        selectedSoundMode = musicEngine.currentSoundMode
-        selectedSoundModeSummary = musicEngine.currentSoundMode.summary
-        selectedProfileID = musicEngine.currentProfileID
-        selectedProfileDisplayName = musicEngine.currentProfileDisplayName
-        selectedProfileSummary = musicEngine.currentProfileSummary
+    private func resetPlaybackState() {
+        playbackQueue.sync {
+            player.resetPerformanceState()
+        }
     }
+
+    private func makeSelectionState() -> ControllerSelectionState {
+        ControllerSelectionState(
+            instrument: musicEngine.instrument,
+            soundMode: musicEngine.currentSoundMode,
+            soundModeSummary: musicEngine.currentSoundMode.summary,
+            profileID: musicEngine.currentProfileID,
+            profileDisplayName: musicEngine.currentProfileDisplayName,
+            profileSummary: musicEngine.currentProfileSummary,
+            learnedKeysDescription: musicEngine.learnedKeysSummary,
+            adaptiveMappingDescription: musicEngine.adaptiveMappingDescription,
+            performanceDescription: musicEngine.performanceDescription,
+            topKeyStats: musicEngine.topKeyStats,
+            customPianoSettings: musicEngine.currentCustomPianoSettings
+        )
+    }
+
+    private func applySelectionState(_ state: ControllerSelectionState) {
+        selectedInstrument = state.instrument
+        selectedSoundMode = state.soundMode
+        selectedSoundModeSummary = state.soundModeSummary
+        selectedProfileID = state.profileID
+        selectedProfileDisplayName = state.profileDisplayName
+        selectedProfileSummary = state.profileSummary
+        learnedKeysDescription = state.learnedKeysDescription
+        adaptiveMappingDescription = state.adaptiveMappingDescription
+        performanceDescription = state.performanceDescription
+        topKeyStats = state.topKeyStats
+        customPianoSettings = state.customPianoSettings
+    }
+
+    private func makeDisplayState(for plan: SoundTriggerPlan, totalKeyPresses: Int) -> ControllerDisplayState {
+        ControllerDisplayState(
+            totalKeyPresses: totalKeyPresses,
+            currentTempoDescription: musicEngine.dashboardSpeedSummary,
+            lastSoundIdentifier: plan.soundID,
+            lastEventDescription: plan.debugSummary,
+            learnedKeysDescription: musicEngine.learnedKeysSummary,
+            adaptiveMappingDescription: musicEngine.adaptiveMappingDescription,
+            performanceDescription: musicEngine.performanceDescription,
+            topKeyStats: musicEngine.topKeyStats
+        )
+    }
+
+    private func updateCustomPianoSettings(_ settings: CustomPianoSettings) {
+        let selectionState = playbackQueue.sync { [self] in
+            musicEngine.setCustomPianoSettings(settings)
+            return makeSelectionState()
+        }
+        applySelectionState(selectionState)
+    }
+
+    private func enqueueDisplayState(_ state: ControllerDisplayState, immediate: Bool = false) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            pendingDisplayState = state
+
+            if immediate {
+                flushPendingDisplayState()
+                return
+            }
+
+            guard displayRefreshWorkItem == nil else { return }
+
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.flushPendingDisplayState()
+            }
+            displayRefreshWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + displayRefreshInterval, execute: workItem)
+        }
+    }
+
+    private func flushPendingDisplayState() {
+        displayRefreshWorkItem?.cancel()
+        displayRefreshWorkItem = nil
+
+        guard let state = pendingDisplayState else { return }
+        pendingDisplayState = nil
+
+        totalKeyPresses = state.totalKeyPresses
+        currentTempoDescription = state.currentTempoDescription
+        lastSoundIdentifier = state.lastSoundIdentifier
+        lastEventDescription = state.lastEventDescription
+        learnedKeysDescription = state.learnedKeysDescription
+        adaptiveMappingDescription = state.adaptiveMappingDescription
+        performanceDescription = state.performanceDescription
+        topKeyStats = state.topKeyStats
+    }
+}
+
+private struct ControllerSelectionState {
+    let instrument: KeyboardInstrument
+    let soundMode: KeyboardSoundMode
+    let soundModeSummary: String
+    let profileID: String
+    let profileDisplayName: String
+    let profileSummary: String
+    let learnedKeysDescription: String
+    let adaptiveMappingDescription: String
+    let performanceDescription: String
+    let topKeyStats: [AdaptiveKeyStat]
+    let customPianoSettings: CustomPianoSettings
+}
+
+private struct ControllerDisplayState {
+    let totalKeyPresses: Int
+    let currentTempoDescription: String
+    let lastSoundIdentifier: String
+    let lastEventDescription: String
+    let learnedKeysDescription: String
+    let adaptiveMappingDescription: String
+    let performanceDescription: String
+    let topKeyStats: [AdaptiveKeyStat]
 }
 
 enum KeyboardEventFilter {
