@@ -7,16 +7,30 @@
 
 import SwiftUI
 
+enum NoisyKeysWindowID {
+    static let dashboard = "dashboard"
+}
+
+final class NoisyKeysAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+}
+
 @main
 struct NoisyKeysApp: App {
-    @StateObject private var keyboardNoiseController = KeyboardNoiseController()
+    @NSApplicationDelegateAdaptor(NoisyKeysAppDelegate.self) private var appDelegate
+    @StateObject private var keyboardNoiseController: KeyboardNoiseController
+
+    init() {
+        let controller = KeyboardNoiseController()
+        controller.start()
+        _keyboardNoiseController = StateObject(wrappedValue: controller)
+    }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("Noisy Keys", id: NoisyKeysWindowID.dashboard) {
             ContentView(controller: keyboardNoiseController)
-                .task {
-                    keyboardNoiseController.start()
-                }
         }
 
         MenuBarExtra(isInserted: .constant(true)) {

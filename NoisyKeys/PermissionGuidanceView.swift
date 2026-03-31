@@ -22,7 +22,7 @@ struct PermissionGuidanceView: View {
                     )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Keyboard access needed")
+                    Text("Keyboard access")
                         .font(.headline)
                         .foregroundStyle(Color.inkPrimary)
 
@@ -34,7 +34,7 @@ struct PermissionGuidanceView: View {
             }
 
             if compact {
-                Text("Turn on Noisy Keys, then click Check Again.")
+                Text("Turn on Noisy Keys, then choose Check Again.")
                     .font(.callout)
                     .foregroundStyle(Color.inkPrimary.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)
@@ -62,7 +62,7 @@ struct PermissionGuidanceView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
-                Button("Open Settings") {
+                Button("Open System Settings") {
                     controller.openInputMonitoringSettings()
                 }
                 .buttonStyle(NoisyArcadeButtonStyle(fill: .butterAccent))

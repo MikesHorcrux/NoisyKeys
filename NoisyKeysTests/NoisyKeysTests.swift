@@ -62,6 +62,13 @@ struct NoisyKeysTests {
     }
 
     @MainActor
+    @Test func curatedSoundModesStayLimitedToFourPresets() {
+        #expect(KeyboardSoundMode.curatedModes.count == 4)
+        #expect(!KeyboardSoundMode.curatedModes.contains(.customMix))
+        #expect(KeyboardSoundMode.defaultCuratedMode == .feltBloom)
+    }
+
+    @MainActor
     @Test func soundModeSwitchChangesInstrumentAndBackingProfile() {
         var engine = KeyboardMusicEngine(instrument: .piano)
         engine.setSoundMode(.grandRoom)

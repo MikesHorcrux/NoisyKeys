@@ -9,6 +9,7 @@ import AppKit
 import SwiftUI
 
 struct MenuBarControlsView: View {
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject var controller: KeyboardNoiseController
 
     private let modeColumns = [
@@ -35,7 +36,8 @@ struct MenuBarControlsView: View {
 
                     MenuBarModesCard(
                         controller: controller,
-                        columns: modeColumns
+                        columns: modeColumns,
+                        openApp: bringAppForward
                     )
 
                     MenuBarFooterRow(
@@ -50,10 +52,17 @@ struct MenuBarControlsView: View {
     }
 
     private func bringAppForward() {
+        openWindow(id: NoisyKeysWindowID.dashboard)
         NSApp.activate(ignoringOtherApps: true)
 
-        if let window = NSApp.windows.first(where: { !$0.isMiniaturized && $0.canBecomeKey }) {
-            window.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.async {
+            if let window = NSApp.windows.first(where: {
+                !$0.isMiniaturized &&
+                $0.canBecomeKey &&
+                $0.title == "Noisy Keys"
+            }) {
+                window.makeKeyAndOrderFront(nil)
+            }
         }
     }
 }
@@ -101,7 +110,7 @@ private struct MenuBarHeroCard: View {
 
             HStack(spacing: 8) {
                 MenuBarStatPill(
-                    title: "Mood",
+                    title: "Sound",
                     value: controller.selectedSoundMode.displayName,
                     tint: controller.selectedSoundMode.accentColor
                 )
@@ -155,8 +164,8 @@ private struct MenuBarQuickControlsCard: View {
             .toggleStyle(.switch)
 
             HStack(spacing: 10) {
-                Button("Test Sound") {
-                    controller.playTestNoise()
+                Button("Preview Sound") {
+                    controller.previewSelectedSound()
                 }
                 .buttonStyle(NoisyArcadeButtonStyle(fill: .tomatoAccent))
             }
@@ -172,6 +181,7 @@ private struct MenuBarQuickControlsCard: View {
 private struct MenuBarModesCard: View {
     let controller: KeyboardNoiseController
     let columns: [GridItem]
+    let openApp: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -181,9 +191,9 @@ private struct MenuBarModesCard: View {
             )
 
             LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(controller.availableSoundModes) { mode in
+                ForEach(KeyboardSoundMode.curatedModes) { mode in
                     Button {
-                        controller.setSoundMode(mode)
+                        controller.selectSoundMode(mode, previewSelection: true)
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -202,7 +212,7 @@ private struct MenuBarModesCard: View {
                             Text(mode.displayName)
                                 .font(.subheadline.weight(.bold))
 
-                            Text(mode == .customMix ? "Edit in app" : mode.stickerCopy)
+                            Text(mode.stickerCopy)
                                 .font(.caption)
                                 .foregroundStyle(Color.inkPrimary.opacity(0.66))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -212,6 +222,38 @@ private struct MenuBarModesCard: View {
                     .buttonStyle(NoisyModeTileStyle(tint: mode.accentColor, isSelected: mode == controller.selectedSoundMode))
                 }
             }
+
+            Button {
+                controller.selectSoundMode(.customMix)
+                openApp()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: KeyboardSoundMode.customMix.symbolName)
+                        .font(.headline.weight(.bold))
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Custom Mix")
+                            .font(.subheadline.weight(.bold))
+
+                        Text("Open the app to shape pitch, tone, and vibe.")
+                            .font(.caption)
+                            .foregroundStyle(Color.inkPrimary.opacity(0.66))
+                    }
+
+                    Spacer()
+
+                    Text(controller.selectedSoundMode == .customMix ? "ON" : "OPEN")
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(Color.mintAccent.opacity(controller.selectedSoundMode == .customMix ? 0.28 : 0.14))
+                        )
+                }
+            }
+            .buttonStyle(NoisyModeTileStyle(tint: .mintAccent, isSelected: controller.selectedSoundMode == .customMix))
         }
         .noisyCard(tint: .poolAccent)
     }
@@ -222,7 +264,7 @@ private struct MenuBarFooterRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button("Open App") {
+            Button("Open Noisy Keys") {
                 openApp()
             }
             .buttonStyle(NoisyArcadeButtonStyle(fill: .poolAccent))

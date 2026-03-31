@@ -23,12 +23,32 @@ final class NoisyKeysUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testOnboardingLetsYouPickAndPreviewAStartingSound() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["UITEST_RESET_ONBOARDING"]
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        let primaryButton = app.buttons["Continue"]
+        XCTAssertTrue(primaryButton.waitForExistence(timeout: 5))
+        primaryButton.tap()
+        primaryButton.tap()
+
+        let selectedSound = app.descendants(matching: .any).matching(identifier: "onboarding.selectedSound").firstMatch
+        XCTAssertTrue(selectedSound.waitForExistence(timeout: 5))
+        XCTAssertEqual(selectedSound.label, "Felt Bloom")
+        XCTAssertFalse(app.buttons["Custom Mix"].exists)
+
+        let jazzClub = app.buttons["Jazz Club"]
+        XCTAssertTrue(jazzClub.exists)
+        jazzClub.tap()
+        XCTAssertEqual(selectedSound.label, "Jazz Club")
+
+        let previewButton = app.buttons["Preview Sound"]
+        XCTAssertTrue(previewButton.exists)
+        previewButton.tap()
+
+        primaryButton.tap()
+        XCTAssertTrue(app.staticTexts["Jazz Club"].waitForExistence(timeout: 5))
     }
 
     @MainActor

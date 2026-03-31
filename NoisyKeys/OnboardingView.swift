@@ -10,9 +10,10 @@ struct OnboardingView: View {
     @Binding var hasCompletedOnboarding: Bool
 
     @State private var step: OnboardingStep = .welcome
+    @State private var hasPreparedStartingSound = false
 
     private var presetModes: [KeyboardSoundMode] {
-        controller.availableSoundModes.filter { $0 != .customMix }
+        KeyboardSoundMode.curatedModes
     }
 
     private var stepIndex: Int {
@@ -34,7 +35,7 @@ struct OnboardingView: View {
                             .font(.noisyDisplay(size: 42))
                             .foregroundStyle(Color.inkPrimary)
 
-                        Text("A quick setup for access, sound, and menu bar controls.")
+                        Text("A quick setup for access, sound, and the menu bar.")
                             .font(.title3)
                             .foregroundStyle(Color.inkPrimary.opacity(0.78))
                             .fixedSize(horizontal: false, vertical: true)
@@ -69,12 +70,14 @@ struct OnboardingView: View {
                     }
                     .buttonStyle(NoisyArcadeButtonStyle(fill: step.accentColor))
                     .frame(width: 208)
+                    .accessibilityIdentifier("onboarding.primaryButton")
                 }
             }
             .padding(28)
             .frame(maxWidth: 980)
             .frame(maxWidth: .infinity, alignment: .top)
         }
+        .onAppear(perform: prepareOnboardingState)
     }
 
     @ViewBuilder
@@ -97,9 +100,9 @@ struct OnboardingView: View {
     private var primaryButtonTitle: String {
         switch step {
         case .welcome:
-            "Get Started"
+            "Continue"
         case .access:
-            controller.hasGlobalAccess ? "Choose a Sound" : "Continue"
+            "Continue"
         case .mood:
             "Continue"
         case .ready:
@@ -131,6 +134,14 @@ struct OnboardingView: View {
             hasCompletedOnboarding = true
         }
     }
+
+    private func prepareOnboardingState() {
+        guard !hasPreparedStartingSound else { return }
+        hasPreparedStartingSound = true
+
+        guard !presetModes.contains(controller.selectedSoundMode) else { return }
+        controller.selectSoundMode(KeyboardSoundMode.defaultCuratedMode)
+    }
 }
 
 private enum OnboardingStep: Int, CaseIterable {
@@ -146,7 +157,7 @@ private enum OnboardingStep: Int, CaseIterable {
         case .access:
             "Access"
         case .mood:
-            "Mood"
+            "Sound"
         case .ready:
             "Ready"
         }
@@ -215,7 +226,7 @@ private struct OnboardingWelcomeCard: View {
                 onboardingHeader(
                     eyebrow: "Welcome",
                     title: "Thank you for supporting Noisy Keys",
-                    detail: "Noisy Keys is a one-time purchase, and your support helps keep it simple, polished, and independent."
+                    detail: "Your support helps keep Noisy Keys simple, polished, and independent."
                 )
 
                 OnboardingChecklistItem(
@@ -298,7 +309,7 @@ private struct OnboardingAccessCard: View {
             onboardingHeader(
                 eyebrow: "Access",
                 title: "Enable keyboard access",
-                detail: "Input Monitoring lets Noisy Keys respond anywhere on your Mac."
+                detail: "Allow Input Monitoring so Noisy Keys can respond anywhere on your Mac."
             )
 
             HStack(alignment: .top, spacing: 18) {
@@ -330,16 +341,16 @@ private struct OnboardingAccessCard: View {
                     if !controller.hasGlobalAccess {
                         PermissionGuidanceView(controller: controller)
                     } else {
-                        Text(controller.accessMessage)
+                        Text("Access is on. Noisy Keys can respond across your Mac.")
                             .font(.callout)
                             .foregroundStyle(Color.inkPrimary.opacity(0.68))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     HStack(spacing: 12) {
-                        Button(controller.isNoiseEnabled ? "Test Sound" : "Turn Sound On") {
+                        Button(controller.isNoiseEnabled ? "Preview Sound" : "Turn Sound On") {
                             if controller.isNoiseEnabled {
-                                controller.playTestNoise()
+                                controller.previewSelectedSound()
                             } else {
                                 controller.setNoiseEnabled(true, promptIfNeeded: false)
                             }
@@ -350,7 +361,7 @@ private struct OnboardingAccessCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: controller.hasGlobalAccess ? "checkmark.seal.fill" : "hand.raised.fill")
                             .foregroundStyle(controller.hasGlobalAccess ? Color.mintAccent : Color.butterAccent)
-                        Text(controller.hasGlobalAccess ? "Access is ready." : "Follow the steps above, then click Check Again.")
+                        Text(controller.hasGlobalAccess ? "Access is ready." : "Follow the steps above, then choose Check Again.")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color.inkPrimary.opacity(0.78))
                     }
@@ -383,15 +394,15 @@ private struct OnboardingMoodCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             onboardingHeader(
-                eyebrow: "Mood",
-                title: "Choose your starting sound",
-                detail: "You can change it any time."
+                eyebrow: "Sound",
+                title: "Choose a starting sound",
+                detail: "Pick one now. You can change it later."
             )
 
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(presetModes) { mode in
                     Button {
-                        controller.setSoundMode(mode)
+                        controller.selectSoundMode(mode)
                     } label: {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
@@ -415,12 +426,47 @@ private struct OnboardingMoodCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(NoisyModeTileStyle(tint: mode.accentColor, isSelected: mode == controller.selectedSoundMode))
+                    .accessibilityIdentifier("onboarding.sound.\(mode.rawValue)")
                 }
             }
 
-            Text("Selected: \(controller.selectedSoundMode.displayName)")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.inkPrimary.opacity(0.76))
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Selected sound")
+                        .font(.caption.weight(.bold))
+                        .kerning(1.1)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.inkPrimary.opacity(0.56))
+
+                    Text(controller.selectedSoundMode.displayName)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Color.inkPrimary)
+                        .accessibilityIdentifier("onboarding.selectedSound")
+
+                    Text(controller.selectedSoundMode.summary)
+                        .font(.callout)
+                        .foregroundStyle(Color.inkPrimary.opacity(0.68))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button("Preview Sound") {
+                    controller.previewSelectedSound()
+                }
+                .buttonStyle(NoisyArcadeButtonStyle(fill: controller.selectedSoundMode.accentColor))
+                .frame(width: 180)
+                .accessibilityIdentifier("onboarding.previewSound")
+            }
+            .padding(18)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(Color.panelBackground.opacity(0.94))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(controller.selectedSoundMode.accentColor.opacity(0.28), lineWidth: 1.2)
+            )
         }
         .noisyCard(tint: controller.selectedSoundMode.accentColor)
     }
@@ -434,12 +480,12 @@ private struct OnboardingReadyCard: View {
             onboardingHeader(
                 eyebrow: "Ready",
                 title: "You’re ready",
-                detail: "Noisy Keys is set up and ready to use."
+                detail: "Noisy Keys is ready when you are."
             )
 
             HStack(alignment: .top, spacing: 18) {
                 OnboardingFactCard(
-                    title: "Starting mood",
+                    title: "Sound",
                     value: controller.selectedSoundMode.displayName,
                     detail: controller.selectedSoundMode.summary,
                     tint: controller.selectedSoundMode.accentColor
@@ -448,7 +494,7 @@ private struct OnboardingReadyCard: View {
                 OnboardingFactCard(
                     title: "Menu bar",
                     value: "Piano icon",
-                    detail: "Use the piano icon for quick controls.",
+                    detail: "Use it for quick controls any time.",
                     tint: .poolAccent
                 )
 
@@ -456,15 +502,15 @@ private struct OnboardingReadyCard: View {
                     title: "Access",
                     value: controller.hasGlobalAccess ? "Ready" : "Not yet",
                     detail: controller.hasGlobalAccess
-                        ? "Noisy Keys should work anywhere on your Mac."
-                        : "You can still finish now and enable Input Monitoring later.",
+                        ? "Noisy Keys can work across your Mac."
+                        : "You can finish now and enable Input Monitoring later.",
                     tint: .mintAccent
                 )
             }
 
             HStack(spacing: 12) {
-                Button("Test Sound") {
-                    controller.playTestNoise()
+                Button("Preview Sound") {
+                    controller.previewSelectedSound()
                 }
                 .buttonStyle(NoisyArcadeButtonStyle(fill: .tomatoAccent))
                 .frame(width: 160)
@@ -473,7 +519,7 @@ private struct OnboardingReadyCard: View {
                     NoisyMenuBarGlyph(isEnabled: controller.isNoiseEnabled)
                         .frame(width: 28, height: 20)
 
-                    Text("The menu bar icon is always available for quick controls.")
+                    Text("The menu bar icon is always there for quick controls.")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.inkPrimary.opacity(0.78))
                 }

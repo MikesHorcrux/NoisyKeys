@@ -12,6 +12,8 @@ import CoreGraphics
 import Foundation
 
 final class KeyboardNoiseController: ObservableObject {
+    static let previewSymbol: KeyboardSymbol = .letter("a")
+
     @Published var isNoiseEnabled = true
     @Published var hasGlobalAccess = false
     @Published var selectedInstrument: KeyboardInstrument = .piano
@@ -37,6 +39,7 @@ final class KeyboardNoiseController: ObservableObject {
     private var localMonitor: Any?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
+    private var isEventTapActive = false
     private var hasStarted = false
     private var processedKeyPresses = 0
     private var pendingDisplayState: ControllerDisplayState?
@@ -137,10 +140,14 @@ final class KeyboardNoiseController: ObservableObject {
     }
 
     func playTestNoise() {
+        previewSelectedSound()
+    }
+
+    func previewSelectedSound() {
         playbackQueue.async { [weak self] in
             guard let self else { return }
 
-            let plan = self.musicEngine.previewPlan(for: .space)
+            let plan = self.musicEngine.previewPlan(for: Self.previewSymbol)
             self.player.play(plan)
             let displayState = self.makeDisplayState(for: plan, totalKeyPresses: self.processedKeyPresses)
             self.enqueueDisplayState(displayState, immediate: true)
@@ -167,12 +174,20 @@ final class KeyboardNoiseController: ObservableObject {
     }
 
     func setSoundMode(_ mode: KeyboardSoundMode) {
+        selectSoundMode(mode)
+    }
+
+    func selectSoundMode(_ mode: KeyboardSoundMode, previewSelection: Bool = false) {
         let selectionState = playbackQueue.sync { [self] in
             player.resetPerformanceState()
             musicEngine.setSoundMode(mode)
             return makeSelectionState()
         }
         applySelectionState(selectionState)
+
+        if previewSelection {
+            previewSelectedSound()
+        }
     }
 
     func setProfile(id: String) {
@@ -216,6 +231,7 @@ final class KeyboardNoiseController: ObservableObject {
 
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: true)
+            isEventTapActive = true
             return
         }
 
@@ -241,14 +257,15 @@ final class KeyboardNoiseController: ObservableObject {
 
         self.eventTap = eventTap
         eventTapSource = runLoopSource
+        isEventTapActive = true
     }
 
     private func handleLocalEvent(_ event: NSEvent) {
         guard isNoiseEnabled else { return }
-        guard eventTap == nil else { return }
+        guard !isEventTapActive else { return }
         guard let input = KeyboardInputTranslator.input(for: event, source: .localApp) else { return }
 
-        process(input, countAsKeyPress: true)
+        enqueueProcessing(input, countAsKeyPress: true)
     }
 
     private func stop() {
@@ -268,7 +285,7 @@ final class KeyboardNoiseController: ObservableObject {
         guard KeyboardEventFilter.shouldPlay(for: type, isAutoRepeat: isAutoRepeat) else { return }
         guard let input = KeyboardInputTranslator.input(for: type, keyCode: keyCode, source: .systemWide) else { return }
 
-        process(input, countAsKeyPress: true)
+        processOnPlaybackQueue(input, countAsKeyPress: true)
     }
 
     private static let eventTapCallback: CGEventTapCallBack = { _, type, event, userInfo in
@@ -298,6 +315,7 @@ final class KeyboardNoiseController: ObservableObject {
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
         }
+        isEventTapActive = false
     }
 
     private func tearDownEventTap() {
@@ -310,21 +328,24 @@ final class KeyboardNoiseController: ObservableObject {
             CFMachPortInvalidate(eventTap)
             self.eventTap = nil
         }
+        isEventTapActive = false
     }
 
-    private func process(_ input: KeyboardInput, countAsKeyPress: Bool) {
+    private func enqueueProcessing(_ input: KeyboardInput, countAsKeyPress: Bool) {
         playbackQueue.async { [weak self] in
-            guard let self else { return }
-
-            if countAsKeyPress {
-                self.processedKeyPresses += 1
-            }
-
-            let plan = self.musicEngine.plan(for: input)
-            self.player.play(plan)
-            let displayState = self.makeDisplayState(for: plan, totalKeyPresses: self.processedKeyPresses)
-            self.enqueueDisplayState(displayState)
+            self?.processOnPlaybackQueue(input, countAsKeyPress: countAsKeyPress)
         }
+    }
+
+    private func processOnPlaybackQueue(_ input: KeyboardInput, countAsKeyPress: Bool) {
+        if countAsKeyPress {
+            processedKeyPresses += 1
+        }
+
+        let plan = musicEngine.plan(for: input)
+        player.play(plan)
+        let displayState = makeDisplayState(for: plan, totalKeyPresses: processedKeyPresses)
+        enqueueDisplayState(displayState)
     }
 
     private func resetPlaybackState() {

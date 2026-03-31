@@ -63,6 +63,18 @@ enum KeyboardSoundMode: String, CaseIterable, Identifiable {
         }
     }
 
+    var isCuratedPreset: Bool {
+        self != .customMix
+    }
+
+    static var curatedModes: [KeyboardSoundMode] {
+        allCases.filter(\.isCuratedPreset)
+    }
+
+    static var defaultCuratedMode: KeyboardSoundMode {
+        .feltBloom
+    }
+
     static func preferredMode(for instrument: KeyboardInstrument, profileID: String) -> KeyboardSoundMode {
         if let exactMatch = allCases.first(where: { $0.instrument == instrument && $0.profileID == profileID }) {
             return exactMatch

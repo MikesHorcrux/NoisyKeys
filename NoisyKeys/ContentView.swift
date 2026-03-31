@@ -10,8 +10,9 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var controller: KeyboardNoiseController
 
-    @AppStorage("hasCompletedOnboarding_v3") private var hasCompletedOnboarding = false
+    @AppStorage("hasCompletedOnboarding_v4") private var hasCompletedOnboarding = false
     @State private var showsDebugReadouts = false
+    @State private var hasAppliedLaunchOverrides = false
 
     private let presetColumns = [
         GridItem(.flexible(), spacing: 16),
@@ -19,14 +20,18 @@ struct ContentView: View {
     ]
 
     private var presetModes: [KeyboardSoundMode] {
-        controller.availableSoundModes.filter { $0 != .customMix }
+        KeyboardSoundMode.curatedModes
+    }
+
+    private var forcesOnboardingForUITests: Bool {
+        ProcessInfo.processInfo.arguments.contains("UITEST_RESET_ONBOARDING")
     }
 
     var body: some View {
         ZStack {
             NoisyBackgroundView(mode: controller.selectedSoundMode)
 
-            if hasCompletedOnboarding {
+            if hasCompletedOnboarding && !forcesOnboardingForUITests {
                 dashboardContent
                     .transition(.opacity)
             } else {
@@ -39,6 +44,7 @@ struct ContentView: View {
         }
         .animation(.snappy(duration: 0.26), value: hasCompletedOnboarding)
         .frame(minWidth: 860, minHeight: 680)
+        .onAppear(perform: applyLaunchOverridesIfNeeded)
     }
 
     private var dashboardContent: some View {
@@ -77,6 +83,17 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .top)
         }
     }
+
+    private func applyLaunchOverridesIfNeeded() {
+        guard !hasAppliedLaunchOverrides else { return }
+        hasAppliedLaunchOverrides = true
+
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("UITEST_RESET_ONBOARDING") {
+            hasCompletedOnboarding = false
+            controller.selectSoundMode(KeyboardSoundMode.defaultCuratedMode)
+        }
+    }
 }
 
 private struct HeroStageCard: View {
@@ -95,7 +112,7 @@ private struct HeroStageCard: View {
                     .font(.noisyDisplay(size: 54))
                     .foregroundStyle(Color.inkPrimary)
 
-                Text("Turn typing into piano sound. Pick a sound, turn it on, and play.")
+                Text("Turn typing into piano sound.")
                     .font(.title3)
                     .foregroundStyle(Color.inkPrimary.opacity(0.80))
                     .fixedSize(horizontal: false, vertical: true)
@@ -222,7 +239,7 @@ private struct SoundPickerCard: View {
             SectionTitle(
                 eyebrow: "Sound",
                 title: "Choose a sound",
-                detail: "Four presets and one custom option."
+                detail: "Four presets plus Custom Mix."
             )
 
             LazyVGrid(columns: [
@@ -348,7 +365,7 @@ private struct NoiseSwitchCard: View {
             SectionTitle(
                 eyebrow: "Sound",
                 title: "Keyboard sound",
-                detail: controller.hasGlobalAccess ? "" : "Allow keyboard access to use Noisy Keys across your Mac."
+                detail: controller.hasGlobalAccess ? "" : "Allow keyboard access to hear Noisy Keys across your Mac."
             )
 
             Toggle(isOn: Binding(
@@ -362,8 +379,8 @@ private struct NoiseSwitchCard: View {
             .toggleStyle(.switch)
 
             HStack(spacing: 12) {
-                Button("Test Sound") {
-                    controller.playTestNoise()
+                Button("Preview Sound") {
+                    controller.previewSelectedSound()
                 }
                 .buttonStyle(NoisyArcadeButtonStyle(fill: .tomatoAccent))
             }
@@ -404,7 +421,7 @@ private struct TypingDashboardCard: View {
             SectionTitle(
                 eyebrow: "Typing",
                 title: "Your session",
-                detail: "Speed, total taps, and top keys."
+                detail: "Speed, taps, and top keys."
             )
 
             HStack(spacing: 12) {
@@ -446,7 +463,7 @@ private struct PlayGuideCard: View {
             SectionTitle(
                 eyebrow: "Tips",
                 title: "Quick tips",
-                detail: "Keep it simple."
+                detail: ""
             )
 
             HStack(alignment: .top, spacing: 14) {
@@ -467,8 +484,8 @@ private struct PlayGuideCard: View {
                 GuideRow(
                     tint: .poolAccent,
                     icon: "hand.tap.fill",
-                    title: "Test if it goes quiet",
-                    detail: "Use Test Sound to check the audio path."
+                    title: "Preview if it goes quiet",
+                    detail: "Use Preview Sound to check the audio path."
                 )
             }
         }
