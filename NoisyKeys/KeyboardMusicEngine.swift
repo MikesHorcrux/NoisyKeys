@@ -491,29 +491,12 @@ struct KeyboardMusicEngine {
         lastTempo
     }
 
-    var availableSoundModes: [KeyboardSoundMode] {
-        KeyboardSoundMode.allCases
-    }
-
     var currentProfileDisplayName: String {
         currentProfileSnapshot.displayName
     }
 
     var currentProfileSummary: String {
         currentProfileSnapshot.summary
-    }
-
-    var currentProfileID: String {
-        currentProfileSnapshot.id
-    }
-
-    var availableProfileOptions: [ProfileOption] {
-        switch instrument {
-        case .piano:
-            PianoProfileCatalog.all.map { ProfileOption(id: $0.id, displayName: $0.displayName, summary: $0.summary) }
-        case .loFiKeys:
-            LoFiProfileCatalog.all.map { ProfileOption(id: $0.id, displayName: $0.displayName, summary: $0.summary) }
-        }
     }
 
     mutating func plan(for input: KeyboardInput) -> SoundTriggerPlan {
@@ -603,25 +586,6 @@ struct KeyboardMusicEngine {
         )
     }
 
-    mutating func setInstrument(_ instrument: KeyboardInstrument) {
-        self.instrument = instrument
-        soundMode = KeyboardSoundMode.preferredMode(for: instrument, profileID: currentProfileSnapshot.id)
-        burstTracker.reset()
-        cadenceTracker.reset()
-        expressionTracker.reset()
-        performanceBurstLock.reset()
-        pianoPhraseTracker.reset()
-        lastLeadNoteLabel = nil
-        lastTempo = .idle
-        learnedKeysSummary = usageProfile.topKeysSummary
-        adaptiveMappingDescription = usageProfile.defaultDescription
-        performanceDescription = Self.defaultPerformanceDescription(
-            for: currentProfileSnapshot,
-            mode: soundMode,
-            instrument: instrument
-        )
-    }
-
     mutating func setSoundMode(_ mode: KeyboardSoundMode) {
         soundMode = mode
 
@@ -646,27 +610,6 @@ struct KeyboardMusicEngine {
         resetCurrentInstrumentState()
     }
 
-    mutating func setCurrentProfile(id: String) {
-        switch instrument {
-        case .piano:
-            setPianoProfile(id)
-        case .loFiKeys:
-            setLoFiProfile(id)
-        }
-    }
-
-    mutating func setPianoProfile(_ id: String) {
-        if id == CustomPianoProfileBuilder.profileID {
-            pianoProfile = CustomPianoProfileBuilder.makeProfile(from: customPianoSettings)
-        } else {
-            pianoProfile = PianoProfileCatalog.profile(for: id)
-        }
-        soundMode = KeyboardSoundMode.preferredMode(for: .piano, profileID: pianoProfile.id)
-        if instrument == .piano {
-            resetCurrentInstrumentState()
-        }
-    }
-
     mutating func setCustomPianoSettings(_ settings: CustomPianoSettings) {
         customPianoSettings = settings
         guard instrument == .piano else { return }
@@ -674,14 +617,6 @@ struct KeyboardMusicEngine {
 
         pianoProfile = CustomPianoProfileBuilder.makeProfile(from: settings)
         resetCurrentInstrumentState()
-    }
-
-    mutating func setLoFiProfile(_ id: String) {
-        loFiProfile = LoFiProfileCatalog.profile(for: id)
-        soundMode = KeyboardSoundMode.preferredMode(for: .loFiKeys, profileID: loFiProfile.id)
-        if instrument == .loFiKeys {
-            resetCurrentInstrumentState()
-        }
     }
 
     private var currentProfileSnapshot: InstrumentProfileSnapshot {

@@ -151,12 +151,6 @@ struct LoFiSoundProfile: Identifiable, Equatable {
     }
 }
 
-struct ProfileOption: Identifiable, Hashable {
-    let id: String
-    let displayName: String
-    let summary: String
-}
-
 enum PianoProfileCatalog {
     static let all: [PianoSoundProfile] = [
         ConcertHallPianoProfile.profile,

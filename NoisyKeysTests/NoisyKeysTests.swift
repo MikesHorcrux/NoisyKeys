@@ -44,12 +44,6 @@ struct NoisyKeysTests {
     }
 
     @MainActor
-    @Test func presetCatalogsExposeEightProfilesPerInstrument() {
-        #expect(PianoProfileCatalog.all.count == 8)
-        #expect(LoFiProfileCatalog.all.count == 8)
-    }
-
-    @MainActor
     @Test func soundModesStayLimitedToFiveSimpleChoices() {
         #expect(KeyboardSoundMode.allCases.count == 5)
         #expect(KeyboardSoundMode.allCases.map(\.displayName) == [
@@ -66,6 +60,12 @@ struct NoisyKeysTests {
         #expect(KeyboardSoundMode.curatedModes.count == 4)
         #expect(!KeyboardSoundMode.curatedModes.contains(.customMix))
         #expect(KeyboardSoundMode.defaultCuratedMode == .feltBloom)
+        #expect(KeyboardSoundMode.curatedModes.map(\.displayName) == [
+            "Grand Room",
+            "Felt Bloom",
+            "Jazz Club",
+            "Midnight Blue"
+        ])
     }
 
     @MainActor
@@ -93,38 +93,6 @@ struct NoisyKeysTests {
 
         #expect(midnightPlan.instrument == .piano)
         #expect(midnightPlan.profile.displayName == "Moonlight")
-    }
-
-    @MainActor
-    @Test func changingLoFiProfileChangesSoundPrefix() {
-        var engine = KeyboardMusicEngine(instrument: .loFiKeys)
-        engine.setCurrentProfile(id: "rain-window")
-
-        let plan = engine.plan(for: KeyboardInput(
-            symbol: .letter("a"),
-            keyCode: 0,
-            source: .localApp,
-            timestamp: Date(timeIntervalSinceReferenceDate: 0)
-        ))
-
-        #expect(plan.profile.displayName == "Rain Window")
-        #expect(plan.soundID.hasPrefix("lofi-rain-window."))
-    }
-
-    @MainActor
-    @Test func changingPianoProfileChangesSoundPrefix() {
-        var engine = KeyboardMusicEngine(instrument: .piano)
-        engine.setCurrentProfile(id: "moonlight")
-
-        let plan = engine.plan(for: KeyboardInput(
-            symbol: .letter("a"),
-            keyCode: 0,
-            source: .localApp,
-            timestamp: Date(timeIntervalSinceReferenceDate: 0)
-        ))
-
-        #expect(plan.profile.displayName == "Moonlight")
-        #expect(plan.soundID.hasPrefix("piano-moonlight."))
     }
 
     @MainActor

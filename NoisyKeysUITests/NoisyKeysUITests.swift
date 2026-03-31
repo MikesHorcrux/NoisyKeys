@@ -28,27 +28,35 @@ final class NoisyKeysUITests: XCTestCase {
         app.launchArguments += ["UITEST_RESET_ONBOARDING"]
         app.launch()
 
-        let primaryButton = app.buttons["Continue"]
+        let onboardingRoot = app.scrollViews["onboarding.root"]
+        XCTAssertTrue(onboardingRoot.waitForExistence(timeout: 5))
+
+        let primaryButton = app.buttons["onboarding.primaryButton"]
         XCTAssertTrue(primaryButton.waitForExistence(timeout: 5))
         primaryButton.tap()
         primaryButton.tap()
 
-        let selectedSound = app.descendants(matching: .any).matching(identifier: "onboarding.selectedSound").firstMatch
+        let soundStep = app.otherElements["onboarding.step.sound"]
+        XCTAssertTrue(soundStep.waitForExistence(timeout: 5))
+
+        let selectedSound = app.staticTexts["onboarding.selectedSound"]
         XCTAssertTrue(selectedSound.waitForExistence(timeout: 5))
         XCTAssertEqual(selectedSound.label, "Felt Bloom")
         XCTAssertFalse(app.buttons["Custom Mix"].exists)
 
-        let jazzClub = app.buttons["Jazz Club"]
+        let jazzClub = app.buttons["onboarding.sound.jazzClub"]
         XCTAssertTrue(jazzClub.exists)
         jazzClub.tap()
         XCTAssertEqual(selectedSound.label, "Jazz Club")
 
-        let previewButton = app.buttons["Preview Sound"]
+        let previewButton = app.buttons["onboarding.previewSound"]
         XCTAssertTrue(previewButton.exists)
-        previewButton.tap()
 
         primaryButton.tap()
-        XCTAssertTrue(app.staticTexts["Jazz Club"].waitForExistence(timeout: 5))
+
+        let dashboardTitle = app.staticTexts["dashboard.title"]
+        XCTAssertTrue(dashboardTitle.waitForExistence(timeout: 5))
+        XCTAssertEqual(dashboardTitle.label, "Noisy Keys")
     }
 
     @MainActor

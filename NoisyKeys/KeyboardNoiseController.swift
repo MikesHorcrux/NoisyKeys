@@ -5,7 +5,6 @@
 //  Created by Mike  Van Amburg on 3/29/26.
 //
 
-import AVFoundation
 import AppKit
 import Combine
 import CoreGraphics
@@ -16,10 +15,7 @@ final class KeyboardNoiseController: ObservableObject {
 
     @Published var isNoiseEnabled = true
     @Published var hasGlobalAccess = false
-    @Published var selectedInstrument: KeyboardInstrument = .piano
     @Published var selectedSoundMode: KeyboardSoundMode = .feltBloom
-    @Published var selectedSoundModeSummary = KeyboardSoundMode.feltBloom.summary
-    @Published var selectedProfileID = PianoProfileCatalog.defaultProfile.id
     @Published var selectedProfileDisplayName = PianoProfileCatalog.defaultProfile.displayName
     @Published var selectedProfileSummary = PianoProfileCatalog.defaultProfile.summary
     @Published var accessMessage = "Checking access..."
@@ -48,10 +44,7 @@ final class KeyboardNoiseController: ObservableObject {
 
     init() {
         let selectionState = makeSelectionState()
-        selectedInstrument = selectionState.instrument
         selectedSoundMode = selectionState.soundMode
-        selectedSoundModeSummary = selectionState.soundModeSummary
-        selectedProfileID = selectionState.profileID
         selectedProfileDisplayName = selectionState.profileDisplayName
         selectedProfileSummary = selectionState.profileSummary
         learnedKeysDescription = selectionState.learnedKeysDescription
@@ -139,10 +132,6 @@ final class KeyboardNoiseController: ObservableObject {
         _ = NSWorkspace.shared.open(settingsURL)
     }
 
-    func playTestNoise() {
-        previewSelectedSound()
-    }
-
     func previewSelectedSound() {
         playbackQueue.async { [weak self] in
             guard let self else { return }
@@ -152,25 +141,6 @@ final class KeyboardNoiseController: ObservableObject {
             let displayState = self.makeDisplayState(for: plan, totalKeyPresses: self.processedKeyPresses)
             self.enqueueDisplayState(displayState, immediate: true)
         }
-    }
-
-    var availableSoundModes: [KeyboardSoundMode] {
-        KeyboardSoundMode.allCases
-    }
-
-    var availableProfiles: [ProfileOption] {
-        playbackQueue.sync {
-            musicEngine.availableProfileOptions
-        }
-    }
-
-    func setInstrument(_ instrument: KeyboardInstrument) {
-        let selectionState = playbackQueue.sync { [self] in
-            player.resetPerformanceState()
-            musicEngine.setInstrument(instrument)
-            return makeSelectionState()
-        }
-        applySelectionState(selectionState)
     }
 
     func setSoundMode(_ mode: KeyboardSoundMode) {
@@ -188,15 +158,6 @@ final class KeyboardNoiseController: ObservableObject {
         if previewSelection {
             previewSelectedSound()
         }
-    }
-
-    func setProfile(id: String) {
-        let selectionState = playbackQueue.sync { [self] in
-            player.resetPerformanceState()
-            musicEngine.setCurrentProfile(id: id)
-            return makeSelectionState()
-        }
-        applySelectionState(selectionState)
     }
 
     func setCustomPianoPitch(_ pitch: CustomPianoPitch) {
@@ -356,10 +317,7 @@ final class KeyboardNoiseController: ObservableObject {
 
     private func makeSelectionState() -> ControllerSelectionState {
         ControllerSelectionState(
-            instrument: musicEngine.instrument,
             soundMode: musicEngine.currentSoundMode,
-            soundModeSummary: musicEngine.currentSoundMode.summary,
-            profileID: musicEngine.currentProfileID,
             profileDisplayName: musicEngine.currentProfileDisplayName,
             profileSummary: musicEngine.currentProfileSummary,
             learnedKeysDescription: musicEngine.learnedKeysSummary,
@@ -371,10 +329,7 @@ final class KeyboardNoiseController: ObservableObject {
     }
 
     private func applySelectionState(_ state: ControllerSelectionState) {
-        selectedInstrument = state.instrument
         selectedSoundMode = state.soundMode
-        selectedSoundModeSummary = state.soundModeSummary
-        selectedProfileID = state.profileID
         selectedProfileDisplayName = state.profileDisplayName
         selectedProfileSummary = state.profileSummary
         learnedKeysDescription = state.learnedKeysDescription
@@ -445,10 +400,7 @@ final class KeyboardNoiseController: ObservableObject {
 }
 
 private struct ControllerSelectionState {
-    let instrument: KeyboardInstrument
     let soundMode: KeyboardSoundMode
-    let soundModeSummary: String
-    let profileID: String
     let profileDisplayName: String
     let profileSummary: String
     let learnedKeysDescription: String
