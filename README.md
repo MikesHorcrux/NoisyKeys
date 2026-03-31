@@ -1,8 +1,30 @@
 # Noisy Keys
 
+<p align="center">
+  <img src="docs/images/noisy-keys-icon.png" alt="Noisy Keys app icon" width="160">
+</p>
+
+<p align="center">
+  <strong>Turn your keyboard into piano.</strong>
+</p>
+
+<p align="center">
+  <img src="docs/images/noisy-keys-hero.png" alt="Noisy Keys keyboard artwork" width="920">
+</p>
+
 Noisy Keys turns your Mac keyboard into a piano.
 
 It listens for keyboard input, maps each keystroke into a musical role, chooses a note that fits the current phrase, and plays that note through a sampler-backed piano voice. The app is intentionally small on the surface, but the engine under it keeps track of burst timing, adaptive letter learning, phrase motion, mood, and playback shaping so typing feels musical instead of random.
+
+## Visuals
+
+<p align="center">
+  <img src="docs/images/noisy-keys-notes.png" alt="Glowing musical notes artwork" width="760">
+</p>
+
+<p align="center">
+  A playful Mac app with a piano heart.
+</p>
 
 ## What It Does
 
@@ -174,4 +196,3 @@ Before release:
 - Verify global typing still works when the main window is closed
 - Verify menu bar reopen behavior
 - Verify selected sound mode persists across relaunch
-
