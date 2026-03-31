@@ -9,7 +9,7 @@ import SwiftUI
 
 @main
 struct NoisyKeysApp: App {
-    @State private var keyboardNoiseController = KeyboardNoiseController()
+    @StateObject private var keyboardNoiseController = KeyboardNoiseController()
 
     var body: some Scene {
         WindowGroup {

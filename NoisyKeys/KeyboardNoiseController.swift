@@ -7,30 +7,29 @@
 
 import AVFoundation
 import AppKit
+import Combine
 import CoreGraphics
 import Foundation
-import Observation
 
-@Observable
-final class KeyboardNoiseController {
-    var isNoiseEnabled = true
-    var hasGlobalAccess = false
-    var selectedInstrument: KeyboardInstrument = .piano
-    var selectedSoundMode: KeyboardSoundMode = .feltBloom
-    var selectedSoundModeSummary = KeyboardSoundMode.feltBloom.summary
-    var selectedProfileID = PianoProfileCatalog.defaultProfile.id
-    var selectedProfileDisplayName = PianoProfileCatalog.defaultProfile.displayName
-    var selectedProfileSummary = PianoProfileCatalog.defaultProfile.summary
-    var accessMessage = "Checking access..."
-    var lastEventDescription = "Waiting for the first clack."
-    var lastSoundIdentifier = "Waiting for the first mapped sound."
-    var currentTempoDescription = "0 WPM"
-    var learnedKeysDescription = "Learning your letter habits."
-    var adaptiveMappingDescription = "Frequent letters will settle into the safest note families."
-    var performanceDescription = "Warm piano · neutral tone"
-    var totalKeyPresses = 0
-    var topKeyStats: [AdaptiveKeyStat] = []
-    var customPianoSettings = CustomPianoSettings.default
+final class KeyboardNoiseController: ObservableObject {
+    @Published var isNoiseEnabled = true
+    @Published var hasGlobalAccess = false
+    @Published var selectedInstrument: KeyboardInstrument = .piano
+    @Published var selectedSoundMode: KeyboardSoundMode = .feltBloom
+    @Published var selectedSoundModeSummary = KeyboardSoundMode.feltBloom.summary
+    @Published var selectedProfileID = PianoProfileCatalog.defaultProfile.id
+    @Published var selectedProfileDisplayName = PianoProfileCatalog.defaultProfile.displayName
+    @Published var selectedProfileSummary = PianoProfileCatalog.defaultProfile.summary
+    @Published var accessMessage = "Checking access..."
+    @Published var lastEventDescription = "Waiting for the first clack."
+    @Published var lastSoundIdentifier = "Waiting for the first mapped sound."
+    @Published var currentTempoDescription = "0 WPM"
+    @Published var learnedKeysDescription = "Learning your letter habits."
+    @Published var adaptiveMappingDescription = "Frequent letters will settle into the safest note families."
+    @Published var performanceDescription = "Warm piano · neutral tone"
+    @Published var totalKeyPresses = 0
+    @Published var topKeyStats: [AdaptiveKeyStat] = []
+    @Published var customPianoSettings = CustomPianoSettings.default
 
     private let player = KeyboardSynthPlayer()
     private let playbackQueue = DispatchQueue(label: "NoisyKeys.Playback")

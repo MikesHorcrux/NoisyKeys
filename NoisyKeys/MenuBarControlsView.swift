@@ -9,7 +9,7 @@ import AppKit
 import SwiftUI
 
 struct MenuBarControlsView: View {
-    let controller: KeyboardNoiseController
+    @ObservedObject var controller: KeyboardNoiseController
 
     private let modeColumns = [
         GridItem(.flexible(), spacing: 10),

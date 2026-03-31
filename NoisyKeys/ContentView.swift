@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    let controller: KeyboardNoiseController
+    @ObservedObject var controller: KeyboardNoiseController
 
     @AppStorage("hasCompletedOnboarding_v3") private var hasCompletedOnboarding = false
     @State private var showsDebugReadouts = false
