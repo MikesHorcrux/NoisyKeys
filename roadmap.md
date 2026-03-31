@@ -1,83 +1,160 @@
-# NoisyKeys Roadmap
+# Noisy Keys Roadmap
 
-## Vision
+## Product Direction
 
-Turn typing into music instead of simple key click noise.
+Noisy Keys is a paid Mac app that turns typing into piano.
 
-The product should feel playful, musical, and reactive without becoming chaotic or annoying.
+The core product is:
 
-## V1.0: Musical Keyboard Foundation
+- simple to understand
+- fun to keep open
+- musical instead of random
+- polished enough to feel worth paying for
+
+For v1, the product is intentionally narrow:
+
+- English only
+- macOS 13+
+- best on standard US keyboard layouts
+- piano-first, not a giant sound pack app
+
+## Current State
+
+The app is now in launch-candidate shape.
+
+### Built
+
+- Global keyboard listening across macOS with Input Monitoring
+- Menu bar controller
+- Main app dashboard
+- Onboarding flow
+- 4 curated piano sounds:
+  - `Grand Room`
+  - `Felt Bloom`
+  - `Jazz Club`
+  - `Midnight Blue`
+- `Custom Mix` piano mode
+- Adaptive note-family learning for letters
+- Phrase-based piano mapping instead of flat per-key note jumps
+- Typing-speed and text-tone performance shaping
+- App icon and menu bar icon
+- README and technical docs
+
+### Product Principle
+
+The app should sound like piano performance, not keyboard click effects.
+
+## V1.0: Ship The Piano App
 
 ### Goal
 
-Ship the first version as a polished musical typing experience built around a piano or lo-fi keys sound.
-
-### Core ideas
-
-- Every key press should trigger a musical event, not just a raw sound effect.
-- Key mapping should feel intentional and harmonious.
-- The system should stay musically constrained so random typing still sounds good.
+Ship the first public version as a focused piano typing app.
 
 ### Scope
 
-- Add a piano / lo-fi instrument mode for typing.
-- Map keys into musical roles instead of random one-off sounds.
-- Keep notes inside a selected key, scale, or chord shape.
-- Support different behavior for letters, space, return, backspace, and modifier keys.
-- Use typing speed as light performance input for rhythm and note density.
-- Keep the existing global on/off controls and menu bar controls working.
+- Keep the 4 curated piano sounds as the main product
+- Keep `Custom Mix` as a secondary advanced option
+- Keep onboarding short and clear
+- Keep permissions obvious and easy to recover from
+- Keep the menu bar experience equal in quality to the main app
+- Keep the sound stable and musical during fast typing
 
-### Suggested V1 key behavior
+### Launch Checklist
 
-- Letter keys: melodic notes
-- Space: pulse, pedal, or low accent
-- Return: strong accent / phrase ending
-- Backspace: tension or reverse-style accent
-- Modifier keys: light percussion or texture hits
+- Final archive and release-build smoke test
+- Verify Input Monitoring flow on a clean machine
+- Verify menu bar reopen behavior
+- Verify global typing still works with no main window visible
+- Verify sound toggle off/on and relaunch persistence
+- Final App Store assets:
+  - icon
+  - screenshots
+  - subtitle
+  - description
+  - keywords
+  - privacy/support links
 
-### V1 non-goals
+### V1 Non-Goals
 
-- No cadence engine yet
-- No emotional analysis yet
-- No genre packs like techno or dubstep yet
-- No deep text interpretation beyond simple typing-speed response
+- No localization yet
+- No non-US keyboard-layout support yet
+- No lo-fi relaunch in the shipping surface yet
+- No genre packs
+- No cloud features
+- No social or recording layer
 
-## V1.1: Musical Polish
-
-- Improve note mapping so common typing patterns feel more musical
-- Add better dynamics and velocity shaping
-- Add instrument selection between piano and lo-fi
-- Add light rhythm variation based on bursts of typing
-
-## V2.0: Cadence And Emotion
+## V1.1: Launch Follow-Up
 
 ### Goal
 
-Make the music respond to how the user is typing and what the writing feels like.
+Tighten what users touch first after release.
 
-### Planned features
+### Focus
 
-- Detect typing cadence over time
-- Speed up or slow down musical phrasing based on typing pace
-- Shift note choices and harmonic color based on mood signals
-- Use punctuation, capitalization, delete frequency, and burstiness as expressive inputs
-- Optionally analyze typed text locally to influence tone
+- Fix launch bugs from real usage
+- Improve onboarding clarity where users hesitate
+- Tighten App Store copy and screenshots based on conversion
+- Add better empty/error states if permission flow still confuses people
+- Clean up analytics-free product signals such as support feedback and reviews
+
+## V1.2: International Readiness
+
+### Goal
+
+Prepare the app for broader language and keyboard support.
+
+### Planned Work
+
+- Move all user-facing copy into localization resources
+- Support additional keyboard layouts beyond US ANSI
+- Revisit mood inference so it is not English-only
+- Rename or reframe speed metrics where `WPM` is not ideal
+- Add first-pass localization for high-value launch languages
+
+## V2.0: Sound Expansion
+
+### Goal
+
+Expand the sound world without diluting the core piano product.
+
+### Planned Work
+
+- Reintroduce lo-fi as a deliberate second sound family
+- Add curated alternate sound packs instead of endless modes
+- Keep profiles fixed and intentional, not noisy or random
+- Add more playback personalities only if they sound truly distinct
 
 ### Guardrails
 
-- Keep text analysis local-only
-- Do not store typed content
-- Ignore or avoid sensitive fields when possible
+- New sounds must feel premium, not like filler
+- The app should stay simple on the surface
+- Sound count should never outrun quality
 
-## Future Versions
+## V2.1: Better Musical Intelligence
 
-- Techno mode
-- Dubstep mode
-- Additional genre packs
-- Smarter phrase generation
-- Theme-based sound packs
-- More expressive mood transitions between calm, tense, playful, and aggressive writing
+### Goal
 
-## Product Principle
+Make phrasing feel even more like performance.
 
-The app should always sound like music first and a keyboard gimmick second.
+### Planned Work
+
+- Better phrase resolution
+- Stronger chord-bed logic
+- Better left-hand support ideas
+- More graceful sustain and cadence behavior
+- More refined burst-to-burst emotional continuity
+
+## Long-Term Ideas
+
+- Additional curated sound families
+- Better international keyboard support
+- Accessibility tuning for sound density and volume behavior
+- Optional recording/export ideas
+- User-created or shareable custom sound presets
+
+## Always True
+
+- Keep the app joyful
+- Keep the UI simple
+- Keep the sound musical
+- Keep the product small enough to stay polished
