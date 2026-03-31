@@ -65,10 +65,23 @@ final class KeyboardNoiseController {
 
     var monitoringScope: String {
         if isNoiseEnabled {
-            return hasGlobalAccess ? "Across your Mac" : "In this app"
+            return hasGlobalAccess ? "Across your Mac" : "App only"
         }
 
         return hasGlobalAccess ? "Ready" : "Off"
+    }
+
+    var inputMonitoringPath: String {
+        "System Settings > Privacy & Security > Input Monitoring"
+    }
+
+    var permissionSteps: [String] {
+        [
+            "Open System Settings.",
+            "Open Privacy & Security, then Input Monitoring.",
+            "Turn on Noisy Keys.",
+            "Return here and click Check Again."
+        ]
     }
 
     func start() {
@@ -113,6 +126,15 @@ final class KeyboardNoiseController {
                 ? "Allow Noisy Keys in System Settings > Privacy & Security > Input Monitoring."
                 : "Sound is off. Allow Input Monitoring later to use Noisy Keys across your Mac."
         }
+    }
+
+    func checkAccessAgain() {
+        refreshAccessStatus(promptIfNeeded: false)
+    }
+
+    func openInputMonitoringSettings() {
+        let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        _ = NSWorkspace.shared.open(settingsURL)
     }
 
     func playTestNoise() {

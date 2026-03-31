@@ -79,7 +79,9 @@ private struct MenuBarHeroCard: View {
                         .font(.noisyDisplay(size: 26))
                         .foregroundStyle(Color.inkPrimary)
 
-                    Text(controller.isNoiseEnabled ? "Keyboard sound is on." : "Keyboard sound is off.")
+                    Text(controller.hasGlobalAccess
+                         ? (controller.isNoiseEnabled ? "Keyboard sound is on." : "Keyboard sound is off.")
+                         : "Keyboard access needed.")
                         .font(.callout)
                         .foregroundStyle(Color.inkPrimary.opacity(0.70))
                         .fixedSize(horizontal: false, vertical: true)
@@ -153,13 +155,6 @@ private struct MenuBarQuickControlsCard: View {
             .toggleStyle(.switch)
 
             HStack(spacing: 10) {
-                if !controller.hasGlobalAccess {
-                    Button("Allow Access") {
-                        controller.refreshAccessStatus(promptIfNeeded: true)
-                    }
-                    .buttonStyle(NoisyArcadeButtonStyle(fill: .butterAccent))
-                }
-
                 Button("Test Sound") {
                     controller.playTestNoise()
                 }
@@ -167,10 +162,7 @@ private struct MenuBarQuickControlsCard: View {
             }
 
             if !controller.hasGlobalAccess {
-                Text(controller.accessMessage)
-                    .font(.callout)
-                    .foregroundStyle(Color.inkPrimary.opacity(0.64))
-                    .fixedSize(horizontal: false, vertical: true)
+                PermissionGuidanceView(controller: controller, compact: true)
             }
         }
         .noisyCard(tint: controller.isNoiseEnabled ? .mintAccent : .softOutline)

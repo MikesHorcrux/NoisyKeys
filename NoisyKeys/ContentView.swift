@@ -124,6 +124,13 @@ private struct HeroStageCard: View {
                 }
 
                 HStack(spacing: 10) {
+                    if !controller.hasGlobalAccess {
+                        StickerPill(
+                            text: "Access needed",
+                            tint: .butterAccent
+                        )
+                    }
+
                     StickerPill(
                         text: controller.selectedSoundMode.stickerCopy,
                         tint: controller.selectedSoundMode.accentColor
@@ -341,7 +348,7 @@ private struct NoiseSwitchCard: View {
             SectionTitle(
                 eyebrow: "Sound",
                 title: "Keyboard sound",
-                detail: controller.hasGlobalAccess ? "" : "Allow access to use Noisy Keys across your Mac."
+                detail: controller.hasGlobalAccess ? "" : "Allow keyboard access to use Noisy Keys across your Mac."
             )
 
             Toggle(isOn: Binding(
@@ -355,13 +362,6 @@ private struct NoiseSwitchCard: View {
             .toggleStyle(.switch)
 
             HStack(spacing: 12) {
-                if !controller.hasGlobalAccess {
-                    Button("Allow Access") {
-                        controller.refreshAccessStatus(promptIfNeeded: true)
-                    }
-                    .buttonStyle(NoisyArcadeButtonStyle(fill: .butterAccent))
-                }
-
                 Button("Test Sound") {
                     controller.playTestNoise()
                 }
@@ -369,10 +369,11 @@ private struct NoiseSwitchCard: View {
             }
 
             if !controller.hasGlobalAccess {
-                Text(controller.accessMessage)
+                PermissionGuidanceView(controller: controller)
+            } else {
+                Text("Noisy Keys can hear your keyboard across your Mac.")
                     .font(.callout)
                     .foregroundStyle(Color.inkPrimary.opacity(0.64))
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .noisyCard(tint: controller.isNoiseEnabled ? .mintAccent : .softOutline)

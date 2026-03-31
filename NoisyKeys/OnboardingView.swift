@@ -327,17 +327,16 @@ private struct OnboardingAccessCard: View {
                         .font(.headline)
                         .foregroundStyle(Color.inkPrimary)
 
-                    Text(controller.accessMessage)
-                        .font(.callout)
-                        .foregroundStyle(Color.inkPrimary.opacity(0.68))
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !controller.hasGlobalAccess {
+                        PermissionGuidanceView(controller: controller)
+                    } else {
+                        Text(controller.accessMessage)
+                            .font(.callout)
+                            .foregroundStyle(Color.inkPrimary.opacity(0.68))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     HStack(spacing: 12) {
-                        Button("Allow Access") {
-                            controller.refreshAccessStatus(promptIfNeeded: true)
-                        }
-                        .buttonStyle(NoisyArcadeButtonStyle(fill: .butterAccent))
-
                         Button(controller.isNoiseEnabled ? "Test Sound" : "Turn Sound On") {
                             if controller.isNoiseEnabled {
                                 controller.playTestNoise()
@@ -351,7 +350,7 @@ private struct OnboardingAccessCard: View {
                     HStack(spacing: 8) {
                         Image(systemName: controller.hasGlobalAccess ? "checkmark.seal.fill" : "hand.raised.fill")
                             .foregroundStyle(controller.hasGlobalAccess ? Color.mintAccent : Color.butterAccent)
-                        Text(controller.hasGlobalAccess ? "Access is ready." : "You can finish now and allow access later.")
+                        Text(controller.hasGlobalAccess ? "Access is ready." : "Follow the steps above, then click Check Again.")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color.inkPrimary.opacity(0.78))
                     }
