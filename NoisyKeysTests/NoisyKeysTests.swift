@@ -116,6 +116,29 @@ struct NoisyKeysTests {
     }
 
     @MainActor
+    @Test func permissionStepsPointAtInputMonitoringAndApplicationsCopy() {
+        let controller = KeyboardNoiseController()
+        let steps = controller.permissionSteps.joined(separator: " ")
+
+        #expect(steps.contains("Applications"))
+        #expect(steps.contains("Input Monitoring"))
+        #expect(!steps.contains("Accessibility"))
+    }
+
+    @Test func temporaryDistributionLocationsAreDetected() {
+        #expect(NoisyKeysInstallLocation.isTemporaryDistributionPath("/Volumes/Noisy Keys 1.0/NoisyKeys.app"))
+        #expect(NoisyKeysInstallLocation.isTemporaryDistributionPath("/private/var/folders/ab/AppTranslocation/123/d/NoisyKeys.app"))
+        #expect(!NoisyKeysInstallLocation.isTemporaryDistributionPath("/Applications/NoisyKeys.app"))
+        #expect(!NoisyKeysInstallLocation.isTemporaryDistributionPath("/Users/horcrux/Development/NoisyKeys/build/Release/NoisyKeys.app"))
+    }
+
+    @Test func looseReleaseCopiesGetApplicationsHint() {
+        #expect(NoisyKeysInstallLocation.needsApplicationsCopyHint("/Users/horcrux/NoisyKeys.app"))
+        #expect(!NoisyKeysInstallLocation.needsApplicationsCopyHint("/Applications/NoisyKeys.app"))
+        #expect(!NoisyKeysInstallLocation.needsApplicationsCopyHint("/Users/horcrux/Development/NoisyKeys/build/Release/NoisyKeys.app"))
+    }
+
+    @MainActor
     @Test func vibePreferencesDoNotPersistTypedText() {
         let suiteName = "NoisyKeysTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

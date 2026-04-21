@@ -93,7 +93,10 @@ BUILD_SETTINGS=(
   -project "$PROJECT_NAME"
   -scheme "$SCHEME_NAME"
   -configuration "$CONFIGURATION"
+  -destination "generic/platform=macOS"
   -derivedDataPath "$DERIVED_DATA_PATH"
+  ONLY_ACTIVE_ARCH=NO
+  "ARCHS=arm64 x86_64"
 )
 
 if [[ -n "$DEVELOPER_ID_APPLICATION" ]]; then
@@ -102,6 +105,7 @@ if [[ -n "$DEVELOPER_ID_APPLICATION" ]]; then
     "CODE_SIGN_IDENTITY=$DEVELOPER_ID_APPLICATION"
     "DEVELOPMENT_TEAM=$TEAM_ID"
     ENABLE_HARDENED_RUNTIME=YES
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
   )
 fi
 
@@ -110,6 +114,15 @@ xcodebuild "${BUILD_SETTINGS[@]}" clean build
 if [[ ! -d "$APP_BUNDLE" ]]; then
   echo "Build succeeded, but $APP_BUNDLE was not found" >&2
   exit 1
+fi
+
+if [[ -n "$DEVELOPER_ID_APPLICATION" ]]; then
+  codesign --force --options runtime --timestamp \
+    --sign "$DEVELOPER_ID_APPLICATION" \
+    "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+  codesign --force --options runtime --timestamp \
+    --sign "$DEVELOPER_ID_APPLICATION" \
+    "$APP_BUNDLE"
 fi
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_BUNDLE/Contents/Info.plist")"
@@ -140,7 +153,9 @@ $DISPLAY_NAME $VERSION ($BUILD_NUMBER)
 Install:
 1. Drag $APP_NAME.app to Applications.
 2. Open $DISPLAY_NAME from Applications.
-3. macOS may ask for Accessibility permission so the app can hear global typing.
+3. macOS may ask for Input Monitoring permission so the app can hear global typing.
+4. If sound only works while the app is in front, toggle Noisy Keys off and back
+   on in Input Monitoring, then quit and reopen the Applications copy.
 
 Support:
 Keep this DMG for reinstalling the same build.

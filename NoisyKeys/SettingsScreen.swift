@@ -48,8 +48,8 @@ private struct GeneralSettingsPane: View {
                         .foregroundStyle(.secondary)
                 }
 
-                LabeledContent("Input Monitoring") {
-                    Text(controller.hasGlobalAccess ? "Allowed" : "Needs access")
+                LabeledContent("System-wide access") {
+                    Text(controller.hasGlobalAccess ? "Active" : "Needs access")
                         .foregroundStyle(controller.hasGlobalAccess ? .secondary : Color.tomatoAccent)
                 }
             }

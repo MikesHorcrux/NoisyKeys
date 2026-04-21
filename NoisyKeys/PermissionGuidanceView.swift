@@ -34,7 +34,7 @@ struct PermissionGuidanceView: View {
             }
 
             if compact {
-                Text("Turn on Noisy Keys, then choose Check Again.")
+                Text("Open the Applications copy, turn on Input Monitoring, then choose Check Again.")
                     .font(.callout)
                     .foregroundStyle(Color.inkPrimary.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)

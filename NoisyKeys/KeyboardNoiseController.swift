@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import ApplicationServices
 import Combine
 import CoreGraphics
 import Foundation
@@ -41,9 +42,11 @@ final class KeyboardNoiseController: ObservableObject {
     private var vibeCoordinator = TypingVibeCoordinator()
     private var pendingVibeAnalysisWorkItem: DispatchWorkItem?
     private var localMonitor: Any?
+    private var globalMonitor: Any?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
     private var isEventTapActive = false
+    private var isGlobalMonitorActive = false
     private var hasStarted = false
     private var processedKeyPresses = 0
     private var pendingDisplayState: ControllerDisplayState?
@@ -102,9 +105,9 @@ final class KeyboardNoiseController: ObservableObject {
 
     var permissionSteps: [String] {
         [
-            "Open System Settings.",
-            "Open Privacy & Security, then Input Monitoring.",
-            "Turn on Noisy Keys.",
+            "Open Noisy Keys from Applications.",
+            "Open Privacy & Security > Input Monitoring.",
+            "Turn Noisy Keys off and back on if needed.",
             "Return here and click Check Again."
         ]
     }
@@ -131,6 +134,7 @@ final class KeyboardNoiseController: ObservableObject {
         } else {
             removeLocalMonitor()
             disableEventTap()
+            removeGlobalMonitor()
             resetPlaybackState()
             accessMessage = hasGlobalAccess
                 ? "Sound is off. Turn it on when you want to use Noisy Keys."
@@ -139,21 +143,44 @@ final class KeyboardNoiseController: ObservableObject {
     }
 
     func refreshAccessStatus(promptIfNeeded: Bool = false) {
+        let appPath = Bundle.main.bundleURL.standardizedFileURL.path
+        let installHint = NoisyKeysInstallLocation.needsApplicationsCopyHint(appPath)
+            ? " Move NoisyKeys.app to Applications first; macOS permissions are tied to the exact app copy."
+            : ""
+
+        if NoisyKeysInstallLocation.isTemporaryDistributionPath(appPath) {
+            disableSystemWideMonitoring()
+            hasGlobalAccess = false
+            accessMessage = "Move NoisyKeys.app to Applications and reopen it before granting access. Running from the DMG can leave Noisy Keys in app-only mode."
+            return
+        }
+
         let hasAccess = promptIfNeeded ? CGRequestListenEventAccess() : CGPreflightListenEventAccess()
-        hasGlobalAccess = hasAccess
+        let hasAccessibilityAccess = AXIsProcessTrusted()
+        let hasAnySystemWideAccess = hasAccess || hasAccessibilityAccess
+
+        guard isNoiseEnabled else {
+            disableSystemWideMonitoring()
+            hasGlobalAccess = hasAnySystemWideAccess
+            accessMessage = hasAnySystemWideAccess
+                ? "Access is ready. Sound is off."
+                : "Sound is off. Allow Input Monitoring later to use Noisy Keys across your Mac."
+            return
+        }
 
         if hasAccess {
-            accessMessage = isNoiseEnabled
+            let didStart = installEventTapIfNeeded()
+            hasGlobalAccess = didStart
+            accessMessage = didStart
                 ? "Keyboard access is on across your Mac."
-                : "Access is ready. Sound is off."
-            if isNoiseEnabled {
-                installEventTapIfNeeded()
-            }
+                : "Input Monitoring is allowed, but the system-wide listener could not start. Quit and reopen Noisy Keys, then click Check Again.\(installHint)"
+        } else if hasAccessibilityAccess, installGlobalMonitorIfNeeded() {
+            hasGlobalAccess = true
+            accessMessage = "Keyboard access is on across your Mac. Input Monitoring is still recommended for the most reliable listener."
         } else {
-            disableEventTap()
-            accessMessage = isNoiseEnabled
-                ? "Allow Noisy Keys in System Settings > Privacy & Security > Input Monitoring."
-                : "Sound is off. Allow Input Monitoring later to use Noisy Keys across your Mac."
+            disableSystemWideMonitoring()
+            hasGlobalAccess = false
+            accessMessage = "Allow Noisy Keys in System Settings > Privacy & Security > Input Monitoring.\(installHint) Until then, sound only works while Noisy Keys is in front."
         }
     }
 
@@ -162,8 +189,13 @@ final class KeyboardNoiseController: ObservableObject {
     }
 
     func openInputMonitoringSettings() {
+        if let privacyURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"),
+           NSWorkspace.shared.open(privacyURL) {
+            return
+        }
+
         let settingsURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
-        _ = NSWorkspace.shared.open(settingsURL)
+        NSWorkspace.shared.open(settingsURL)
     }
 
     func previewSelectedSound() {
@@ -240,13 +272,14 @@ final class KeyboardNoiseController: ObservableObject {
         }
     }
 
-    private func installEventTapIfNeeded() {
-        guard CGPreflightListenEventAccess() else { return }
+    private func installEventTapIfNeeded() -> Bool {
+        guard CGPreflightListenEventAccess() else { return false }
 
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: true)
             isEventTapActive = true
-            return
+            removeGlobalMonitor()
+            return true
         }
 
         let eventsOfInterest =
@@ -261,8 +294,11 @@ final class KeyboardNoiseController: ObservableObject {
             callback: Self.eventTapCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            accessMessage = "Keyboard access could not start. Allow Input Monitoring and try again."
-            return
+            NSLog("Noisy Keys could not create the system-wide CGEvent tap.")
+            if AXIsProcessTrusted(), installGlobalMonitorIfNeeded() {
+                return true
+            }
+            return false
         }
 
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
@@ -272,6 +308,27 @@ final class KeyboardNoiseController: ObservableObject {
         self.eventTap = eventTap
         eventTapSource = runLoopSource
         isEventTapActive = true
+        removeGlobalMonitor()
+        return true
+    }
+
+    private func installGlobalMonitorIfNeeded() -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+
+        if globalMonitor != nil {
+            isGlobalMonitorActive = true
+            return true
+        }
+
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+            self?.handleGlobalEvent(event)
+        }
+
+        isGlobalMonitorActive = globalMonitor != nil
+        if isGlobalMonitorActive {
+            disableEventTap()
+        }
+        return isGlobalMonitorActive
     }
 
     private func handleLocalEvent(_ event: NSEvent) {
@@ -282,15 +339,26 @@ final class KeyboardNoiseController: ObservableObject {
         enqueueProcessing(input, countAsKeyPress: true)
     }
 
+    private func handleGlobalEvent(_ event: NSEvent) {
+        guard isNoiseEnabled else { return }
+        guard !isEventTapActive else { return }
+        guard KeyboardEventFilter.shouldPlay(for: event) else { return }
+        guard let input = KeyboardInputTranslator.input(for: event, source: .systemWide) else { return }
+
+        enqueueProcessing(input, countAsKeyPress: true)
+    }
+
     private func stop() {
         removeLocalMonitor()
         tearDownEventTap()
+        removeGlobalMonitor()
     }
 
     private func handleEventTap(type: CGEventType, keyCode: UInt16, isAutoRepeat: Bool) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if isNoiseEnabled, let eventTap {
                 CGEvent.tapEnable(tap: eventTap, enable: true)
+                isEventTapActive = true
             }
             return
         }
@@ -323,6 +391,19 @@ final class KeyboardNoiseController: ObservableObject {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
+    }
+
+    private func removeGlobalMonitor() {
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+            self.globalMonitor = nil
+        }
+        isGlobalMonitorActive = false
+    }
+
+    private func disableSystemWideMonitoring() {
+        disableEventTap()
+        removeGlobalMonitor()
     }
 
     private func disableEventTap() {
@@ -764,5 +845,25 @@ enum KeyboardEventFilter {
         default:
             "Modifier key \(keyCode)"
         }
+    }
+}
+
+enum NoisyKeysInstallLocation {
+    static func isTemporaryDistributionPath(_ path: String) -> Bool {
+        path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/")
+    }
+
+    static func needsApplicationsCopyHint(_ path: String) -> Bool {
+        !isApplicationsPath(path) && !isDevelopmentPath(path) && !isTemporaryDistributionPath(path)
+    }
+
+    private static func isApplicationsPath(_ path: String) -> Bool {
+        path.hasPrefix("/Applications/") || path.hasPrefix("/System/Applications/")
+    }
+
+    private static func isDevelopmentPath(_ path: String) -> Bool {
+        path.contains("/Library/Developer/Xcode/DerivedData/") ||
+            path.contains("/Development/NoisyKeys/") ||
+            path.contains("/build/")
     }
 }

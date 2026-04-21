@@ -50,5 +50,11 @@ drag-to-Applications install flow.
 ## Buyer Install Notes
 
 Tell buyers to drag `NoisyKeys.app` into Applications, open it from
-Applications, then approve Accessibility permission when macOS asks. The app
+Applications, then approve Input Monitoring permission when macOS asks. The app
 does not need a network entitlement for vibe detection.
+
+If a buyer only hears sound while Noisy Keys is frontmost, they are almost
+always running a different app copy than the one macOS allowed. Ask them to quit
+Noisy Keys, drag the app into Applications, open the Applications copy, then
+toggle Noisy Keys off and back on in System Settings > Privacy & Security >
+Input Monitoring.
