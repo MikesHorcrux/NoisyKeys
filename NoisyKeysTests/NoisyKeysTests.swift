@@ -69,6 +69,42 @@ struct NoisyKeysTests {
     }
 
     @MainActor
+    @Test func userPreferencesPersistLaunchState() {
+        let suiteName = "NoisyKeysTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = NoisyKeysUserPreferences(defaults: defaults)
+        let customSettings = CustomPianoSettings(
+            pitch: .high,
+            tone: .bright,
+            vibe: .dreamy
+        )
+
+        preferences.setNoiseEnabled(false)
+        preferences.setSoundMode(.customMix)
+        preferences.setCustomPianoSettings(customSettings)
+
+        let reloadedPreferences = NoisyKeysUserPreferences(defaults: defaults)
+        #expect(!reloadedPreferences.isNoiseEnabled)
+        #expect(reloadedPreferences.selectedSoundMode == .customMix)
+        #expect(reloadedPreferences.customPianoSettings == customSettings)
+    }
+
+    @MainActor
+    @Test func userPreferencesDefaultToLaunchFriendlySettings() {
+        let suiteName = "NoisyKeysTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = NoisyKeysUserPreferences(defaults: defaults)
+
+        #expect(preferences.isNoiseEnabled)
+        #expect(preferences.selectedSoundMode == KeyboardSoundMode.defaultCuratedMode)
+        #expect(preferences.customPianoSettings == CustomPianoSettings.default)
+    }
+
+    @MainActor
     @Test func soundModeSwitchChangesInstrumentAndBackingProfile() {
         var engine = KeyboardMusicEngine(instrument: .piano)
         engine.setSoundMode(.grandRoom)

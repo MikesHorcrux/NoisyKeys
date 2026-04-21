@@ -31,6 +31,7 @@ final class KeyboardNoiseController: ObservableObject {
 
     private let player = KeyboardSynthPlayer()
     private let playbackQueue = DispatchQueue(label: "NoisyKeys.Playback")
+    private let preferences: NoisyKeysUserPreferences
     private var musicEngine = KeyboardMusicEngine(persistentLearning: true)
     private var localMonitor: Any?
     private var eventTap: CFMachPort?
@@ -42,8 +43,15 @@ final class KeyboardNoiseController: ObservableObject {
     private var displayRefreshWorkItem: DispatchWorkItem?
     private let displayRefreshInterval: TimeInterval = 0.08
 
-    init() {
+    init(preferences: NoisyKeysUserPreferences = .standard) {
+        self.preferences = preferences
+
+        let storedCustomPianoSettings = preferences.customPianoSettings
+        musicEngine.setCustomPianoSettings(storedCustomPianoSettings)
+        musicEngine.setSoundMode(preferences.selectedSoundMode)
+
         let selectionState = makeSelectionState()
+        isNoiseEnabled = preferences.isNoiseEnabled
         selectedSoundMode = selectionState.soundMode
         selectedProfileDisplayName = selectionState.profileDisplayName
         selectedProfileSummary = selectionState.profileSummary
@@ -83,11 +91,15 @@ final class KeyboardNoiseController: ObservableObject {
         guard !hasStarted else { return }
 
         hasStarted = true
-        setNoiseEnabled(true, promptIfNeeded: true)
+        if !isNoiseEnabled {
+            refreshAccessStatus(promptIfNeeded: false)
+        }
+        setNoiseEnabled(isNoiseEnabled, promptIfNeeded: isNoiseEnabled)
     }
 
     func setNoiseEnabled(_ isEnabled: Bool, promptIfNeeded: Bool = false) {
         isNoiseEnabled = isEnabled
+        preferences.setNoiseEnabled(isEnabled)
 
         guard hasStarted else { return }
 
@@ -153,6 +165,7 @@ final class KeyboardNoiseController: ObservableObject {
             musicEngine.setSoundMode(mode)
             return makeSelectionState()
         }
+        preferences.setSoundMode(selectionState.soundMode)
         applySelectionState(selectionState)
 
         if previewSelection {
@@ -357,6 +370,7 @@ final class KeyboardNoiseController: ObservableObject {
             musicEngine.setCustomPianoSettings(settings)
             return makeSelectionState()
         }
+        preferences.setCustomPianoSettings(selectionState.customPianoSettings)
         applySelectionState(selectionState)
     }
 
@@ -396,6 +410,90 @@ final class KeyboardNoiseController: ObservableObject {
         adaptiveMappingDescription = state.adaptiveMappingDescription
         performanceDescription = state.performanceDescription
         topKeyStats = state.topKeyStats
+    }
+}
+
+struct NoisyKeysUserPreferences {
+    static let standard = NoisyKeysUserPreferences(defaults: .standard)
+
+    private enum Keys {
+        static let isNoiseEnabled = "noisyKeys.isNoiseEnabled.v1"
+        static let selectedSoundMode = "noisyKeys.selectedSoundMode.v1"
+        static let customPianoPitch = "noisyKeys.customPiano.pitch.v1"
+        static let customPianoTone = "noisyKeys.customPiano.tone.v1"
+        static let customPianoVibe = "noisyKeys.customPiano.vibe.v1"
+    }
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+    }
+
+    var isNoiseEnabled: Bool {
+        guard defaults.object(forKey: Keys.isNoiseEnabled) != nil else {
+            return true
+        }
+
+        return defaults.bool(forKey: Keys.isNoiseEnabled)
+    }
+
+    var selectedSoundMode: KeyboardSoundMode {
+        guard let rawValue = defaults.string(forKey: Keys.selectedSoundMode),
+              let mode = KeyboardSoundMode(rawValue: rawValue) else {
+            return KeyboardSoundMode.defaultCuratedMode
+        }
+
+        return mode
+    }
+
+    var customPianoSettings: CustomPianoSettings {
+        CustomPianoSettings(
+            pitch: customPianoPitch,
+            tone: customPianoTone,
+            vibe: customPianoVibe
+        )
+    }
+
+    func setNoiseEnabled(_ isEnabled: Bool) {
+        defaults.set(isEnabled, forKey: Keys.isNoiseEnabled)
+    }
+
+    func setSoundMode(_ mode: KeyboardSoundMode) {
+        defaults.set(mode.rawValue, forKey: Keys.selectedSoundMode)
+    }
+
+    func setCustomPianoSettings(_ settings: CustomPianoSettings) {
+        defaults.set(settings.pitch.rawValue, forKey: Keys.customPianoPitch)
+        defaults.set(settings.tone.rawValue, forKey: Keys.customPianoTone)
+        defaults.set(settings.vibe.rawValue, forKey: Keys.customPianoVibe)
+    }
+
+    private var customPianoPitch: CustomPianoPitch {
+        guard let rawValue = defaults.string(forKey: Keys.customPianoPitch),
+              let pitch = CustomPianoPitch(rawValue: rawValue) else {
+            return CustomPianoSettings.default.pitch
+        }
+
+        return pitch
+    }
+
+    private var customPianoTone: CustomPianoTone {
+        guard let rawValue = defaults.string(forKey: Keys.customPianoTone),
+              let tone = CustomPianoTone(rawValue: rawValue) else {
+            return CustomPianoSettings.default.tone
+        }
+
+        return tone
+    }
+
+    private var customPianoVibe: CustomPianoVibe {
+        guard let rawValue = defaults.string(forKey: Keys.customPianoVibe),
+              let vibe = CustomPianoVibe(rawValue: rawValue) else {
+            return CustomPianoSettings.default.vibe
+        }
+
+        return vibe
     }
 }
 
