@@ -300,8 +300,12 @@ struct TypingTempoSnapshot: Equatable {
 enum TypingTextMood: String, Equatable {
     case neutral
     case joyful
+    case playful
+    case tender
+    case focused
     case tense
     case angry
+    case sad
 
     var displayName: String {
         rawValue.capitalized
@@ -357,14 +361,28 @@ enum KeyboardPerformanceStyle: String, Equatable {
             case .energetic, .frantic:
                 return .bright
             }
-        case .angry:
+        case .playful:
             switch tempo.intensity {
             case .idle, .relaxed:
-                return .driving
-            case .steady:
-                return .driving
+                return .warm
+            case .steady, .energetic, .frantic:
+                return .bright
+            }
+        case .tender:
+            switch tempo.intensity {
+            case .idle, .relaxed, .steady:
+                return .mellow
             case .energetic, .frantic:
-                return .stormy
+                return .warm
+            }
+        case .focused:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .warm
+            case .steady:
+                return .warm
+            case .energetic, .frantic:
+                return .driving
             }
         case .tense:
             switch tempo.intensity {
@@ -374,6 +392,24 @@ enum KeyboardPerformanceStyle: String, Equatable {
                 return .driving
             case .energetic, .frantic:
                 return .stormy
+            }
+        case .angry:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .driving
+            case .steady:
+                return .driving
+            case .energetic, .frantic:
+                return .stormy
+            }
+        case .sad:
+            switch tempo.intensity {
+            case .idle, .relaxed:
+                return .mellow
+            case .steady:
+                return .mellow
+            case .energetic, .frantic:
+                return .warm
             }
         case .neutral:
             switch tempo.intensity {
@@ -394,13 +430,36 @@ struct TypingExpressionSnapshot: Equatable {
     let positiveScore: Double
     let negativeScore: Double
     let tensionScore: Double
+    let vibeSource: TypingVibeSource
+    let vibeConfidence: Double
+    let vibeEnergy: Double
+    let vibeValence: Double
+    let vibeResponseIntensity: TypingVibeResponseIntensity
 
     var summary: String {
-        if recentText.isEmpty {
-            return "\(textMood.displayName) tone"
+        "\(textMood.displayName) tone · \(vibeSource.displayName)"
+    }
+
+    func applying(_ vibeSnapshot: TypingVibeSnapshot?) -> TypingExpressionSnapshot {
+        guard let vibeSnapshot,
+              vibeSnapshot.isEnabled,
+              vibeSnapshot.source != .disabled,
+              vibeSnapshot.confidence >= 0.42 else {
+            return self
         }
 
-        return "\(textMood.displayName) tone from \"\(recentText)\""
+        return TypingExpressionSnapshot(
+            textMood: vibeSnapshot.textMood,
+            recentText: recentText,
+            positiveScore: positiveScore,
+            negativeScore: negativeScore,
+            tensionScore: tensionScore,
+            vibeSource: vibeSnapshot.source,
+            vibeConfidence: vibeSnapshot.confidence,
+            vibeEnergy: vibeSnapshot.energy,
+            vibeValence: vibeSnapshot.valence,
+            vibeResponseIntensity: vibeSnapshot.responseIntensity
+        )
     }
 }
 
@@ -419,9 +478,15 @@ struct SoundTriggerPlan: Equatable {
     let sustainPedalEngaged: Bool
     let velocity: Double
     let learnedRank: Int?
+    let vibeSource: TypingVibeSource
+    let vibeConfidence: Double
+    let vibeEnergy: Double
+    let vibeValence: Double
+    let vibeResponseIntensity: TypingVibeResponseIntensity
 
     var debugSummary: String {
-        "\(profile.displayName) \(role.displayName) \(noteLabel) \(noteFamilyName) for \(keyLabel) · \(performanceStyle.displayName) · \(textMood.displayName) · \(tempo.summary) · \(source.rawValue)"
+        let confidence = Int((vibeConfidence * 100).rounded())
+        return "\(profile.displayName) \(role.displayName) \(noteLabel) \(noteFamilyName) for \(keyLabel) · \(performanceStyle.displayName) · \(textMood.displayName) · \(vibeSource.displayName) \(confidence)% · \(tempo.summary) · \(source.rawValue)"
     }
 }
 
@@ -435,6 +500,7 @@ struct KeyboardMusicEngine {
     private var expressionTracker = TypingExpressionTracker()
     private var performanceBurstLock = TypingPerformanceBurstLock()
     private var pianoPhraseTracker = PianoPhraseTracker()
+    private var externalVibeSnapshot: TypingVibeSnapshot?
     private var pianoProfile = PianoProfileCatalog.defaultProfile
     private var customPianoSettings = CustomPianoSettings.default
     private var loFiProfile = LoFiProfileCatalog.defaultProfile
@@ -512,7 +578,9 @@ struct KeyboardMusicEngine {
         let tempo = cadenceTracker.register(at: input.timestamp)
         let dashboardSnapshot = dashboardTracker.register(symbol: input.symbol, at: input.timestamp)
         let usageSnapshot = usageProfile.register(symbol: input.symbol)
-        let expressionSnapshot = expressionTracker.register(symbol: input.symbol)
+        let expressionSnapshot = expressionTracker
+            .register(symbol: input.symbol)
+            .applying(externalVibeSnapshot)
         let burstPerformance = performanceBurstLock.resolve(
             for: input.symbol,
             instrument: instrument,
@@ -539,7 +607,8 @@ struct KeyboardMusicEngine {
             performanceStyle: burstPerformance.performanceStyle,
             usageSnapshot: usageSnapshot,
             previousLeadNoteLabel: lastLeadNoteLabel,
-            mappingOverride: phraseMapping
+            mappingOverride: phraseMapping,
+            expressionSnapshot: expressionSnapshot
         )
         if plan.role.shouldInfluenceVoiceLeading {
             lastLeadNoteLabel = plan.noteLabel
@@ -556,7 +625,9 @@ struct KeyboardMusicEngine {
 
     func previewPlan(for symbol: KeyboardSymbol, source: KeyboardInputSource = .localApp) -> SoundTriggerPlan {
         let input = KeyboardInput(symbol: symbol, keyCode: 0, source: source, timestamp: Date())
-        let previewExpression = expressionTracker.preview(after: symbol)
+        let previewExpression = expressionTracker
+            .preview(after: symbol)
+            .applying(externalVibeSnapshot)
         let previewPerformance = performanceBurstLock.preview(
             for: symbol,
             instrument: instrument,
@@ -582,8 +653,13 @@ struct KeyboardMusicEngine {
             performanceStyle: previewPerformance.performanceStyle,
             usageSnapshot: usageProfile.snapshot(for: symbol),
             previousLeadNoteLabel: lastLeadNoteLabel,
-            mappingOverride: previewMapping
+            mappingOverride: previewMapping,
+            expressionSnapshot: previewExpression
         )
+    }
+
+    mutating func setTypingVibeSnapshot(_ snapshot: TypingVibeSnapshot) {
+        externalVibeSnapshot = snapshot.isEnabled ? snapshot : nil
     }
 
     mutating func setSoundMode(_ mode: KeyboardSoundMode) {
@@ -859,17 +935,25 @@ private struct TypingExpressionTracker {
         let positiveScore = wordScore(for: words, lexicon: Self.positiveLexicon) + joyPunctuationScore()
         let negativeScore = wordScore(for: words, lexicon: Self.negativeLexicon) + deletePressure
         let tensionScore = wordScore(for: words, lexicon: Self.tenseLexicon) + punctuationTensionScore() + (deletePressure * 0.8)
-
-        return TypingExpressionSnapshot(
-            textMood: inferredMood(
-                positiveScore: positiveScore,
-                negativeScore: negativeScore,
-                tensionScore: tensionScore
-            ),
-            recentText: recentText,
+        let localVibe = LocalTypingVibeAnalyzer().analyzeLocally(text: recentText)
+        let fallbackMood = inferredMood(
             positiveScore: positiveScore,
             negativeScore: negativeScore,
             tensionScore: tensionScore
+        )
+        let textMood = localVibe.textMood == .neutral ? fallbackMood : localVibe.textMood
+
+        return TypingExpressionSnapshot(
+            textMood: textMood,
+            recentText: recentText,
+            positiveScore: positiveScore,
+            negativeScore: negativeScore,
+            tensionScore: tensionScore,
+            vibeSource: .local,
+            vibeConfidence: localVibe.confidence,
+            vibeEnergy: localVibe.energy,
+            vibeValence: localVibe.valence,
+            vibeResponseIntensity: .balanced
         )
     }
 
@@ -1072,10 +1156,6 @@ private struct TypingPerformanceBurstLock {
             meaningfulEventCount += 1
         }
 
-        if let lockedPerformance {
-            return lockedPerformance
-        }
-
         let livePerformance = TypingBurstPerformance(
             textMood: expressionSnapshot.textMood,
             performanceStyle: KeyboardPerformanceStyle.forInstrument(
@@ -1085,7 +1165,20 @@ private struct TypingPerformanceBurstLock {
             )
         )
 
-        if shouldLock(after: symbol) {
+        if let lockedPerformance {
+            if shouldReplaceLockedPerformance(
+                lockedPerformance,
+                with: livePerformance,
+                expressionSnapshot: expressionSnapshot
+            ) {
+                self.lockedPerformance = livePerformance
+                return livePerformance
+            }
+
+            return lockedPerformance
+        }
+
+        if shouldLock(after: symbol, performance: livePerformance) {
             lockedPerformance = livePerformance
         }
 
@@ -1099,11 +1192,7 @@ private struct TypingPerformanceBurstLock {
         expressionSnapshot: TypingExpressionSnapshot,
         prefersLockedBurst: Bool
     ) -> TypingBurstPerformance {
-        if prefersLockedBurst, let lockedPerformance {
-            return lockedPerformance
-        }
-
-        return TypingBurstPerformance(
+        let livePerformance = TypingBurstPerformance(
             textMood: expressionSnapshot.textMood,
             performanceStyle: KeyboardPerformanceStyle.forInstrument(
                 instrument,
@@ -1111,6 +1200,16 @@ private struct TypingPerformanceBurstLock {
                 expression: expressionSnapshot
             )
         )
+
+        if prefersLockedBurst, let lockedPerformance {
+            if lockedPerformance.textMood == .neutral && livePerformance.textMood != .neutral {
+                return livePerformance
+            }
+
+            return lockedPerformance
+        }
+
+        return livePerformance
     }
 
     mutating func reset() {
@@ -1118,8 +1217,32 @@ private struct TypingPerformanceBurstLock {
         meaningfulEventCount = 0
     }
 
-    private func shouldLock(after symbol: KeyboardSymbol) -> Bool {
-        meaningfulEventCount >= 4 || (symbol.isBurstBoundary && meaningfulEventCount >= 2)
+    private func shouldLock(after symbol: KeyboardSymbol, performance: TypingBurstPerformance) -> Bool {
+        if performance.textMood == .neutral {
+            return meaningfulEventCount >= 10 || (symbol.isBurstBoundary && meaningfulEventCount >= 6)
+        }
+
+        return meaningfulEventCount >= 4 || (symbol.isBurstBoundary && meaningfulEventCount >= 2)
+    }
+
+    private func shouldReplaceLockedPerformance(
+        _ lockedPerformance: TypingBurstPerformance,
+        with livePerformance: TypingBurstPerformance,
+        expressionSnapshot: TypingExpressionSnapshot
+    ) -> Bool {
+        guard lockedPerformance != livePerformance else {
+            return false
+        }
+
+        guard livePerformance.textMood != .neutral else {
+            return false
+        }
+
+        if lockedPerformance.textMood == .neutral {
+            return expressionSnapshot.vibeConfidence >= 0.48
+        }
+
+        return expressionSnapshot.vibeConfidence >= 0.72 && meaningfulEventCount >= 6
     }
 }
 
@@ -1392,7 +1515,8 @@ private enum KeyboardSoundPlanner {
         performanceStyle: KeyboardPerformanceStyle,
         usageSnapshot: AdaptiveKeyUsageSnapshot,
         previousLeadNoteLabel: String?,
-        mappingOverride: SoundMapping? = nil
+        mappingOverride: SoundMapping? = nil,
+        expressionSnapshot: TypingExpressionSnapshot
     ) -> SoundTriggerPlan {
         let mapping = mappingOverride ?? mapping(
             for: input,
@@ -1426,10 +1550,23 @@ private enum KeyboardSoundPlanner {
                 for: input.symbol,
                 instrument: instrument,
                 tempo: tempo,
+                textMood: textMood,
                 performanceStyle: performanceStyle
             ),
-            velocity: mapping.velocity(for: tempo, performanceStyle: performanceStyle),
-            learnedRank: mapping.learnedRank
+            velocity: mapping.velocity(
+                for: tempo,
+                performanceStyle: performanceStyle,
+                textMood: textMood,
+                vibeConfidence: expressionSnapshot.vibeConfidence,
+                vibeEnergy: expressionSnapshot.vibeEnergy,
+                responseIntensity: expressionSnapshot.vibeResponseIntensity
+            ),
+            learnedRank: mapping.learnedRank,
+            vibeSource: expressionSnapshot.vibeSource,
+            vibeConfidence: expressionSnapshot.vibeConfidence,
+            vibeEnergy: expressionSnapshot.vibeEnergy,
+            vibeValence: expressionSnapshot.vibeValence,
+            vibeResponseIntensity: expressionSnapshot.vibeResponseIntensity
         )
     }
 
@@ -1437,6 +1574,7 @@ private enum KeyboardSoundPlanner {
         for symbol: KeyboardSymbol,
         instrument: KeyboardInstrument,
         tempo: TypingTempoSnapshot,
+        textMood: TypingTextMood,
         performanceStyle: KeyboardPerformanceStyle
     ) -> Bool {
         guard instrument == .piano else {
@@ -1449,8 +1587,28 @@ private enum KeyboardSoundPlanner {
         case .modifier, .arrow:
             return false
         case .tab:
+            if textMood == .tender || textMood == .sad {
+                return tempo.intensity != .frantic
+            }
             return tempo.intensity == .relaxed && performanceStyle == .mellow
         case .space:
+            switch textMood {
+            case .joyful:
+                return tempo.intensity == .relaxed || tempo.intensity == .steady
+            case .playful:
+                return tempo.intensity == .relaxed ||
+                    tempo.intensity == .steady ||
+                    (tempo.intensity == .energetic && (tempo.averageInterval ?? 0.5) > 0.24)
+            case .tender, .sad:
+                return tempo.intensity != .frantic
+            case .focused:
+                return tempo.intensity == .relaxed || tempo.intensity == .steady
+            case .angry, .tense:
+                return false
+            case .neutral:
+                break
+            }
+
             switch performanceStyle {
             case .mellow, .warm:
                 return tempo.intensity == .relaxed || tempo.intensity == .steady
@@ -1460,6 +1618,23 @@ private enum KeyboardSoundPlanner {
                 return false
             }
         case .letter, .number, .unknown:
+            switch textMood {
+            case .joyful:
+                return tempo.intensity != .frantic
+            case .playful:
+                return tempo.intensity == .relaxed ||
+                    tempo.intensity == .steady ||
+                    (tempo.intensity == .energetic && (tempo.averageInterval ?? 0.5) > 0.24)
+            case .tender, .sad:
+                return tempo.intensity != .frantic
+            case .focused:
+                return tempo.intensity == .relaxed || tempo.intensity == .steady
+            case .angry, .tense:
+                return false
+            case .neutral:
+                break
+            }
+
             switch performanceStyle {
             case .mellow:
                 return true
@@ -2021,7 +2196,14 @@ struct SoundMapping {
     let noteFamilyName: String
     let learnedRank: Int?
 
-    func velocity(for _: TypingTempoSnapshot, performanceStyle: KeyboardPerformanceStyle) -> Double {
+    func velocity(
+        for _: TypingTempoSnapshot,
+        performanceStyle: KeyboardPerformanceStyle,
+        textMood: TypingTextMood,
+        vibeConfidence: Double,
+        vibeEnergy: Double,
+        responseIntensity: TypingVibeResponseIntensity
+    ) -> Double {
         let styleScale: Double
         switch performanceStyle {
         case .mellow:
@@ -2036,7 +2218,39 @@ struct SoundMapping {
             styleScale = 1.16
         }
 
-        return min(max(baseVelocity * styleScale, 0.16), 1)
+        let intensityScale: Double
+        switch responseIntensity {
+        case .subtle:
+            intensityScale = 0.45
+        case .balanced:
+            intensityScale = 1
+        case .dramatic:
+            intensityScale = 1.35
+        }
+
+        let confidence = textMood == .neutral ? 0 : max(0.55, min(vibeConfidence, 1))
+        let energyLift = min(max(vibeEnergy, 0), 1) * 0.06 * intensityScale
+        let moodScale: Double
+        switch textMood {
+        case .neutral:
+            moodScale = 0.92
+        case .joyful:
+            moodScale = 1.02 + (0.08 * confidence * intensityScale) + energyLift
+        case .playful:
+            moodScale = 1.04 + (0.12 * confidence * intensityScale) + energyLift
+        case .tender:
+            moodScale = 0.84 - (0.04 * confidence * intensityScale)
+        case .focused:
+            moodScale = 0.88
+        case .tense:
+            moodScale = 1.0 + (0.04 * confidence * intensityScale) + (energyLift * 0.5)
+        case .angry:
+            moodScale = 1.06 + (0.08 * confidence * intensityScale) + energyLift
+        case .sad:
+            moodScale = 0.8 - (0.04 * confidence * intensityScale)
+        }
+
+        return min(max(baseVelocity * styleScale * moodScale, 0.16), 1)
     }
 }
 

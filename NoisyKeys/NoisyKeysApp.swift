@@ -45,5 +45,9 @@ struct NoisyKeysApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 388, height: 520)
         .windowResizability(.contentSize)
+
+        Settings {
+            SettingsScreen(controller: keyboardNoiseController)
+        }
     }
 }

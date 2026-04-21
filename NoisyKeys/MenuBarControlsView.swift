@@ -41,7 +41,8 @@ struct MenuBarControlsView: View {
                     )
 
                     MenuBarFooterRow(
-                        openApp: bringAppForward
+                        openApp: bringAppForward,
+                        openSettings: openSettingsWindow
                     )
                 }
                 .padding(16)
@@ -63,6 +64,14 @@ struct MenuBarControlsView: View {
             }) {
                 window.makeKeyAndOrderFront(nil)
             }
+        }
+    }
+
+    private func openSettingsWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
         }
     }
 }
@@ -261,18 +270,33 @@ private struct MenuBarModesCard: View {
 
 private struct MenuBarFooterRow: View {
     let openApp: () -> Void
+    let openSettings: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
             Button("Open Noisy Keys") {
                 openApp()
             }
             .buttonStyle(NoisyArcadeButtonStyle(fill: .poolAccent))
 
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
+            HStack(spacing: 10) {
+                if #available(macOS 14.0, *) {
+                    SettingsLink {
+                        Text("Settings")
+                    }
+                    .buttonStyle(NoisyArcadeButtonStyle(fill: .mintAccent))
+                } else {
+                    Button("Settings") {
+                        openSettings()
+                    }
+                    .buttonStyle(NoisyArcadeButtonStyle(fill: .mintAccent))
+                }
+
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(NoisyArcadeButtonStyle(fill: .softOutline))
             }
-            .buttonStyle(NoisyArcadeButtonStyle(fill: .softOutline))
         }
     }
 }

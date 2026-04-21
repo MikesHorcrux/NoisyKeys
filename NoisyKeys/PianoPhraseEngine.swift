@@ -115,19 +115,19 @@ enum PianoPlaybackProfile {
 
         switch role {
         case .melody:
-            baseDuration = 0.82
+            baseDuration = 0.96
         case .pulse:
-            baseDuration = 0.24
+            baseDuration = 0.34
         case .cadence:
             baseDuration = 1.08
         case .tension:
-            baseDuration = 0.5
+            baseDuration = 0.58
         case .texture:
-            baseDuration = 0.44
+            baseDuration = 0.58
         case .accent:
-            baseDuration = 0.6
+            baseDuration = 0.72
         case .navigation:
-            baseDuration = 0.46
+            baseDuration = 0.56
         }
 
         let profileScale: Double
@@ -157,22 +157,45 @@ enum PianoPlaybackProfile {
         let styleScale: Double
         switch performanceStyle {
         case .mellow:
-            styleScale = 0.98
+            styleScale = 0.94
         case .warm:
-            styleScale = 1
+            styleScale = 0.96
         case .bright:
-            styleScale = 1.02
+            styleScale = 1
         case .driving:
-            styleScale = 1.04
+            styleScale = 1.02
         case .stormy:
-            styleScale = 1.05
+            styleScale = 1.04
         }
 
         return styleScale * profile.baseVelocityScale
     }
 
-    static func effectConfiguration(for profile: InstrumentProfileSnapshot) -> InstrumentEffectConfiguration {
-        profile.effectConfiguration
+    static func effectConfiguration(
+        for profile: InstrumentProfileSnapshot,
+        textMood: TypingTextMood = .neutral,
+        responseIntensity: TypingVibeResponseIntensity = .balanced
+    ) -> InstrumentEffectConfiguration {
+        let base = profile.effectConfiguration
+        let strength = effectStrength(for: responseIntensity)
+        let shaping = effectShaping(for: textMood)
+
+        return InstrumentEffectConfiguration(
+            eqBands: adjustedEQBands(
+                base.eqBands,
+                low: shaping.low * strength,
+                mid: shaping.mid * strength,
+                high: shaping.high * strength
+            ),
+            reverbPreset: base.reverbPreset,
+            reverbMix: clamped(base.reverbMix + (shaping.reverb * strength), lower: 0, upper: 60),
+            delayTime: base.delayTime,
+            delayFeedback: clamped(base.delayFeedback + (shaping.delayFeedback * strength), lower: 0, upper: 55),
+            delayLowPassCutoff: base.delayLowPassCutoff,
+            delayMix: clamped(base.delayMix + (shaping.delayMix * strength), lower: 0, upper: 38),
+            spaceVolume: clamped(base.spaceVolume + (shaping.space * strength), lower: 0.62, upper: 1),
+            outputVolume: clamped(base.outputVolume + (shaping.output * strength), lower: 0.55, upper: 0.98)
+        )
     }
 
     private static func durationMultiplier(
@@ -222,15 +245,15 @@ enum PianoPlaybackProfile {
     ) -> Double {
         switch performanceStyle {
         case .mellow:
-            return role == .pulse ? 0.92 : 1.1
+            return role == .pulse ? 1.02 : 1.18
         case .warm:
-            return role == .pulse ? 0.88 : 1.02
+            return role == .pulse ? 0.96 : 1.08
         case .bright:
-            return role == .pulse ? 0.64 : 0.96
+            return role == .pulse ? 0.78 : 1.02
         case .driving:
-            return role == .pulse ? 0.56 : 0.9
+            return role == .pulse ? 0.72 : 0.98
         case .stormy:
-            return role == .pulse ? 0.52 : 0.86
+            return role == .pulse ? 0.66 : 0.94
         }
     }
 
@@ -255,10 +278,74 @@ enum PianoPlaybackProfile {
                 return 1
             }
         case .pulse:
-            return averageInterval < 0.28 ? 0.84 : 1
+            return averageInterval < 0.28 ? 0.94 : 1
         case .tension, .texture, .accent, .navigation:
             return 1
         }
+    }
+
+    private static func effectStrength(for responseIntensity: TypingVibeResponseIntensity) -> Float {
+        switch responseIntensity {
+        case .subtle:
+            return 0.45
+        case .balanced:
+            return 1
+        case .dramatic:
+            return 1.25
+        }
+    }
+
+    private static func effectShaping(
+        for textMood: TypingTextMood
+    ) -> (
+        low: Float,
+        mid: Float,
+        high: Float,
+        reverb: Float,
+        delayMix: Float,
+        delayFeedback: Float,
+        space: Float,
+        output: Float
+    ) {
+        switch textMood {
+        case .neutral:
+            return (0, 0, 0, 0, 0, 0, 0, 0)
+        case .joyful:
+            return (-0.6, 0.3, 1.5, 2.5, 1.0, 0.5, 0.01, 0)
+        case .playful:
+            return (-0.8, 0.2, 2.2, 1.5, 1.8, 0.8, 0.01, 0)
+        case .tender:
+            return (0.5, 0.4, -1.1, 5.0, 2.5, 0.5, 0.02, -0.02)
+        case .focused:
+            return (-0.2, 0.5, -0.4, -2.0, -1.5, -0.5, -0.01, -0.03)
+        case .tense:
+            return (0.8, 0.2, -0.8, -1.0, -1.0, -0.4, 0, -0.02)
+        case .angry:
+            return (1.2, 0.4, -1.4, -2.5, -2.0, -0.8, -0.01, -0.01)
+        case .sad:
+            return (0.8, -0.2, -1.6, 7.0, 3.2, 0.6, 0.02, -0.04)
+        }
+    }
+
+    private static func adjustedEQBands(
+        _ bands: [EQBandConfiguration],
+        low: Float,
+        mid: Float,
+        high: Float
+    ) -> [EQBandConfiguration] {
+        let gains = [low, mid, high]
+        return bands.enumerated().map { index, band in
+            EQBandConfiguration(
+                filterType: band.filterType,
+                frequency: band.frequency,
+                bandwidth: band.bandwidth,
+                gain: band.gain + gains[min(index, gains.count - 1)]
+            )
+        }
+    }
+
+    private static func clamped(_ value: Float, lower: Float, upper: Float) -> Float {
+        Swift.min(Swift.max(value, lower), upper)
     }
 }
 
@@ -287,7 +374,7 @@ private struct PianoPhraseState {
 
         for band in PianoKeyboardBand.allCases {
             let lane = melodicLane(for: band)
-            bandIndices[band] = Self.startIndex(for: band, laneCount: lane.count)
+            bandIndices[band] = Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
             bandDirections[band] = 1
             bandEventCounts[band] = 0
         }
@@ -404,7 +491,7 @@ private struct PianoPhraseState {
         bandEventCounts[band, default: 0] += 1
 
         let lane = melodicLane(for: band)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let movement = requestedMovement(
             for: family,
             tempo: tempo,
@@ -430,7 +517,7 @@ private struct PianoPhraseState {
         activeBand = band
         let lane = melodicLane(for: band)
         let cadenceAnchors = Self.cadenceIndices(forLaneCount: lane.count)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let targetIndex = cadenceAnchors.min { abs($0 - currentIndex) < abs($1 - currentIndex) } ?? currentIndex
 
         bandIndices[band] = targetIndex
@@ -444,7 +531,7 @@ private struct PianoPhraseState {
     private mutating func continuationNote() -> String {
         let band = activeBand
         let lane = melodicLane(for: band)
-        let noteLabel = lane[bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)]
+        let noteLabel = lane[bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)]
         lastActiveNoteLabel = noteLabel
         return noteLabel
     }
@@ -452,7 +539,7 @@ private struct PianoPhraseState {
     private mutating func ornamentNote(in band: PianoKeyboardBand, direction: Int) -> String {
         activeBand = band
         let lane = melodicLane(for: band)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let nextIndex = max(0, min(lane.count - 1, currentIndex + direction))
         bandIndices[band] = nextIndex
         let noteLabel = lane[nextIndex]
@@ -463,7 +550,7 @@ private struct PianoPhraseState {
     private mutating func textureNote(in band: PianoKeyboardBand, offset: Int) -> String {
         activeBand = band
         let lane = melodicLane(for: band)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let textureIndex = max(0, min(lane.count - 1, currentIndex + offset))
         let noteLabel = lane[textureIndex]
         lastActiveNoteLabel = noteLabel
@@ -506,22 +593,29 @@ private struct PianoPhraseState {
             return 0
         }
 
+        let baseMovement: Int
         switch family {
         case .home:
-            return 0
+            baseMovement = 0
         case .open:
-            return direction
+            baseMovement = direction
         case .lift:
-            return 1
+            baseMovement = 1
         case .warmth:
-            return eventCount.isMultiple(of: 2) ? 0 : -1
+            baseMovement = eventCount.isMultiple(of: 2) ? 0 : -1
         case .color:
-            return direction
+            baseMovement = direction
         case .spark:
-            return 1
+            baseMovement = 1
         case .tension:
-            return performanceStyle == .stormy ? -1 : 1
+            baseMovement = performanceStyle == .stormy ? -1 : 1
         }
+
+        return moodAdjustedMovement(
+            baseMovement,
+            family: family,
+            eventCount: eventCount
+        )
     }
 
     private func boundedIndex(
@@ -549,33 +643,96 @@ private struct PianoPhraseState {
     }
 
     private func melodicLane(for band: PianoKeyboardBand) -> [String] {
+        let lane: [String]
         switch band {
         case .bass:
-            return registerMap.bass
+            lane = registerMap.bass
         case .low:
-            return registerMap.low
+            lane = registerMap.low
         case .middle:
-            return registerMap.middle
+            lane = registerMap.middle
         case .upper:
-            return registerMap.upper
+            lane = registerMap.upper
         case .high:
-            return registerMap.high
+            lane = registerMap.high
+        }
+
+        return moodAdjustedLane(lane)
+    }
+
+    private func moodAdjustedLane(_ lane: [String]) -> [String] {
+        guard lane.count > 2 else { return lane }
+
+        switch textMood {
+        case .joyful, .playful:
+            return Array(lane.suffix(max(2, lane.count - 1)))
+        case .tender, .sad:
+            return Array(lane.prefix(max(2, lane.count - 1)))
+        case .angry:
+            return Array(lane.prefix(max(2, lane.count - 2)))
+        case .focused:
+            if lane.count > 3 {
+                return Array(lane.dropFirst().dropLast())
+            }
+            return lane
+        case .tense, .neutral:
+            return lane
         }
     }
 
-    private static func startIndex(for band: PianoKeyboardBand, laneCount: Int) -> Int {
+    private func moodAdjustedMovement(
+        _ movement: Int,
+        family: AdaptiveNoteFamily,
+        eventCount: Int
+    ) -> Int {
+        switch textMood {
+        case .joyful:
+            return movement == 0 && family == .home && eventCount.isMultiple(of: 4) ? 1 : movement
+        case .playful:
+            return movement >= 0 ? max(1, movement) : movement
+        case .tender:
+            return min(movement, 0)
+        case .focused:
+            return eventCount.isMultiple(of: 3) ? 0 : movement
+        case .sad:
+            return min(movement, 0)
+        case .angry:
+            return family == .tension ? -1 : movement
+        case .tense, .neutral:
+            return movement
+        }
+    }
+
+    private static func startIndex(
+        for band: PianoKeyboardBand,
+        laneCount: Int,
+        textMood: TypingTextMood = .neutral
+    ) -> Int {
+        let offset: Int
+        switch textMood {
+        case .joyful, .playful:
+            offset = 1
+        case .tender, .sad, .angry:
+            offset = -1
+        case .focused, .tense, .neutral:
+            offset = 0
+        }
+
+        let baseIndex: Int
         switch band {
         case .bass:
-            return min(2, laneCount - 1)
+            baseIndex = min(2, laneCount - 1)
         case .low:
-            return min(1, laneCount - 1)
+            baseIndex = min(1, laneCount - 1)
         case .middle:
-            return min(2, laneCount - 1)
+            baseIndex = min(2, laneCount - 1)
         case .upper:
-            return min(1, laneCount - 1)
+            baseIndex = min(1, laneCount - 1)
         case .high:
-            return min(1, laneCount - 1)
+            baseIndex = min(1, laneCount - 1)
         }
+
+        return max(0, min(baseIndex + offset, laneCount - 1))
     }
 
     private static func cadenceIndices(forLaneCount laneCount: Int) -> [Int] {
