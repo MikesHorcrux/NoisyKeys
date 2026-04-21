@@ -59,7 +59,12 @@ final class KeyboardSynthPlayer {
             performanceStyle: .warm,
             sustainPedalEngaged: false,
             velocity: 0.72,
-            learnedRank: nil
+            learnedRank: nil,
+            vibeSource: .local,
+            vibeConfidence: 0,
+            vibeEnergy: 0,
+            vibeValence: 0,
+            vibeResponseIntensity: .balanced
         ))
         engine.prepare()
         startEngineIfNeeded()

@@ -287,7 +287,7 @@ private struct PianoPhraseState {
 
         for band in PianoKeyboardBand.allCases {
             let lane = melodicLane(for: band)
-            bandIndices[band] = Self.startIndex(for: band, laneCount: lane.count)
+            bandIndices[band] = Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
             bandDirections[band] = 1
             bandEventCounts[band] = 0
         }
@@ -404,7 +404,7 @@ private struct PianoPhraseState {
         bandEventCounts[band, default: 0] += 1
 
         let lane = melodicLane(for: band)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let movement = requestedMovement(
             for: family,
             tempo: tempo,
@@ -430,7 +430,7 @@ private struct PianoPhraseState {
         activeBand = band
         let lane = melodicLane(for: band)
         let cadenceAnchors = Self.cadenceIndices(forLaneCount: lane.count)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let targetIndex = cadenceAnchors.min { abs($0 - currentIndex) < abs($1 - currentIndex) } ?? currentIndex
 
         bandIndices[band] = targetIndex
@@ -444,7 +444,7 @@ private struct PianoPhraseState {
     private mutating func continuationNote() -> String {
         let band = activeBand
         let lane = melodicLane(for: band)
-        let noteLabel = lane[bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)]
+        let noteLabel = lane[bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)]
         lastActiveNoteLabel = noteLabel
         return noteLabel
     }
@@ -452,7 +452,7 @@ private struct PianoPhraseState {
     private mutating func ornamentNote(in band: PianoKeyboardBand, direction: Int) -> String {
         activeBand = band
         let lane = melodicLane(for: band)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let nextIndex = max(0, min(lane.count - 1, currentIndex + direction))
         bandIndices[band] = nextIndex
         let noteLabel = lane[nextIndex]
@@ -463,7 +463,7 @@ private struct PianoPhraseState {
     private mutating func textureNote(in band: PianoKeyboardBand, offset: Int) -> String {
         activeBand = band
         let lane = melodicLane(for: band)
-        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count)
+        let currentIndex = bandIndices[band] ?? Self.startIndex(for: band, laneCount: lane.count, textMood: textMood)
         let textureIndex = max(0, min(lane.count - 1, currentIndex + offset))
         let noteLabel = lane[textureIndex]
         lastActiveNoteLabel = noteLabel
@@ -506,22 +506,29 @@ private struct PianoPhraseState {
             return 0
         }
 
+        let baseMovement: Int
         switch family {
         case .home:
-            return 0
+            baseMovement = 0
         case .open:
-            return direction
+            baseMovement = direction
         case .lift:
-            return 1
+            baseMovement = 1
         case .warmth:
-            return eventCount.isMultiple(of: 2) ? 0 : -1
+            baseMovement = eventCount.isMultiple(of: 2) ? 0 : -1
         case .color:
-            return direction
+            baseMovement = direction
         case .spark:
-            return 1
+            baseMovement = 1
         case .tension:
-            return performanceStyle == .stormy ? -1 : 1
+            baseMovement = performanceStyle == .stormy ? -1 : 1
         }
+
+        return moodAdjustedMovement(
+            baseMovement,
+            family: family,
+            eventCount: eventCount
+        )
     }
 
     private func boundedIndex(
@@ -549,33 +556,96 @@ private struct PianoPhraseState {
     }
 
     private func melodicLane(for band: PianoKeyboardBand) -> [String] {
+        let lane: [String]
         switch band {
         case .bass:
-            return registerMap.bass
+            lane = registerMap.bass
         case .low:
-            return registerMap.low
+            lane = registerMap.low
         case .middle:
-            return registerMap.middle
+            lane = registerMap.middle
         case .upper:
-            return registerMap.upper
+            lane = registerMap.upper
         case .high:
-            return registerMap.high
+            lane = registerMap.high
+        }
+
+        return moodAdjustedLane(lane)
+    }
+
+    private func moodAdjustedLane(_ lane: [String]) -> [String] {
+        guard lane.count > 2 else { return lane }
+
+        switch textMood {
+        case .joyful, .playful:
+            return Array(lane.suffix(max(2, lane.count - 1)))
+        case .tender, .sad:
+            return Array(lane.prefix(max(2, lane.count - 1)))
+        case .angry:
+            return Array(lane.prefix(max(2, lane.count - 2)))
+        case .focused:
+            if lane.count > 3 {
+                return Array(lane.dropFirst().dropLast())
+            }
+            return lane
+        case .tense, .neutral:
+            return lane
         }
     }
 
-    private static func startIndex(for band: PianoKeyboardBand, laneCount: Int) -> Int {
+    private func moodAdjustedMovement(
+        _ movement: Int,
+        family: AdaptiveNoteFamily,
+        eventCount: Int
+    ) -> Int {
+        switch textMood {
+        case .joyful:
+            return movement == 0 && family == .home && eventCount.isMultiple(of: 4) ? 1 : movement
+        case .playful:
+            return movement >= 0 ? max(1, movement) : movement
+        case .tender:
+            return min(movement, 0)
+        case .focused:
+            return eventCount.isMultiple(of: 3) ? 0 : movement
+        case .sad:
+            return min(movement, 0)
+        case .angry:
+            return family == .tension ? -1 : movement
+        case .tense, .neutral:
+            return movement
+        }
+    }
+
+    private static func startIndex(
+        for band: PianoKeyboardBand,
+        laneCount: Int,
+        textMood: TypingTextMood = .neutral
+    ) -> Int {
+        let offset: Int
+        switch textMood {
+        case .joyful, .playful:
+            offset = 1
+        case .tender, .sad, .angry:
+            offset = -1
+        case .focused, .tense, .neutral:
+            offset = 0
+        }
+
+        let baseIndex: Int
         switch band {
         case .bass:
-            return min(2, laneCount - 1)
+            baseIndex = min(2, laneCount - 1)
         case .low:
-            return min(1, laneCount - 1)
+            baseIndex = min(1, laneCount - 1)
         case .middle:
-            return min(2, laneCount - 1)
+            baseIndex = min(2, laneCount - 1)
         case .upper:
-            return min(1, laneCount - 1)
+            baseIndex = min(1, laneCount - 1)
         case .high:
-            return min(1, laneCount - 1)
+            baseIndex = min(1, laneCount - 1)
         }
+
+        return max(0, min(baseIndex + offset, laneCount - 1))
     }
 
     private static func cadenceIndices(forLaneCount laneCount: Int) -> [Int] {

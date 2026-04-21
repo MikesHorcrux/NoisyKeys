@@ -84,11 +84,21 @@ struct NoisyKeysTests {
         preferences.setNoiseEnabled(false)
         preferences.setSoundMode(.customMix)
         preferences.setCustomPianoSettings(customSettings)
+        preferences.setTypingVibeConfiguration(TypingVibeConfiguration(
+            isEnabled: false,
+            mode: .localOnly,
+            responseIntensity: .dramatic
+        ))
 
         let reloadedPreferences = NoisyKeysUserPreferences(defaults: defaults)
         #expect(!reloadedPreferences.isNoiseEnabled)
         #expect(reloadedPreferences.selectedSoundMode == .customMix)
         #expect(reloadedPreferences.customPianoSettings == customSettings)
+        #expect(reloadedPreferences.typingVibeConfiguration == TypingVibeConfiguration(
+            isEnabled: false,
+            mode: .localOnly,
+            responseIntensity: .dramatic
+        ))
     }
 
     @MainActor
@@ -102,6 +112,96 @@ struct NoisyKeysTests {
         #expect(preferences.isNoiseEnabled)
         #expect(preferences.selectedSoundMode == KeyboardSoundMode.defaultCuratedMode)
         #expect(preferences.customPianoSettings == CustomPianoSettings.default)
+        #expect(preferences.typingVibeConfiguration == TypingVibeConfiguration.defaultValue)
+    }
+
+    @MainActor
+    @Test func vibePreferencesDoNotPersistTypedText() {
+        let suiteName = "NoisyKeysTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let preferences = NoisyKeysUserPreferences(defaults: defaults)
+        preferences.setTypingVibeConfiguration(TypingVibeConfiguration.defaultValue)
+
+        let persistedValues = defaults.dictionaryRepresentation().values.map { "\($0)" }
+        #expect(!persistedValues.contains { $0.localizedCaseInsensitiveContains("secret happy text") })
+    }
+
+    @MainActor
+    @Test func localVibeAnalyzerClassifiesEmotionalSamples() {
+        let analyzer = LocalTypingVibeAnalyzer()
+
+        #expect(analyzer.analyzeLocally(text: "haha this is so fun lol").textMood == .playful)
+        #expect(analyzer.analyzeLocally(text: "I feel sad and lonely today").textMood == .sad)
+        #expect(analyzer.analyzeLocally(text: "focus build implement test").textMood == .focused)
+        #expect(analyzer.analyzeLocally(text: "fuck this broken thing").textMood == .angry)
+        #expect(analyzer.analyzeLocally(text: "kind gentle thanks").textMood == .tender)
+        #expect(analyzer.analyzeLocally(text: "plain words here").textMood == .neutral)
+    }
+
+    @MainActor
+    @Test func vibeCoordinatorUsesLocalFallbackWhenAppleIsUnavailable() {
+        var coordinator = TypingVibeCoordinator(configuration: .defaultValue)
+
+        let update = feed(
+            "haha fun!",
+            into: &coordinator,
+            availability: .appleIntelligenceNotEnabled
+        )
+
+        #expect(update.snapshot.source == .local)
+        #expect(update.snapshot.textMood == .playful)
+        #expect(update.snapshot.statusDescription.contains("Local vibe engine"))
+        #expect(update.analysisRequest == nil)
+    }
+
+    @MainActor
+    @Test func vibeCoordinatorDoesNotRequestAppleAnalysisPerKeystroke() {
+        var coordinator = TypingVibeCoordinator(configuration: .defaultValue)
+        var requestCount = 0
+
+        for character in "happyjoy" {
+            let update = coordinator.register(
+                symbol: symbol(for: character),
+                at: Date(timeIntervalSinceReferenceDate: TimeInterval(requestCount)),
+                appleAvailability: .available
+            )
+            if update.analysisRequest != nil {
+                requestCount += 1
+            }
+        }
+
+        #expect(requestCount == 0)
+
+        let punctuationUpdate = coordinator.register(
+            symbol: .punctuation("!"),
+            at: Date(timeIntervalSinceReferenceDate: 9),
+            appleAvailability: .available
+        )
+
+        #expect(punctuationUpdate.analysisRequest != nil)
+    }
+
+    @MainActor
+    @Test func vibeCoordinatorSmoothsRapidMoodChanges() {
+        var coordinator = TypingVibeCoordinator(configuration: .defaultValue)
+
+        let joyfulUpdate = feed(
+            "love",
+            into: &coordinator,
+            start: 0,
+            availability: .deviceNotEligible
+        )
+        #expect(joyfulUpdate.snapshot.textMood == .joyful)
+
+        let angryUpdate = feed(
+            "mad",
+            into: &coordinator,
+            start: 20,
+            availability: .deviceNotEligible
+        )
+        #expect(angryUpdate.snapshot.textMood == .joyful)
     }
 
     @MainActor
@@ -440,6 +540,26 @@ struct NoisyKeysTests {
     }
 
     @MainActor
+    @Test func debugSummariesDoNotExposeRawRecentTyping() {
+        var engine = KeyboardMusicEngine(instrument: .piano)
+        let text = "secret love"
+        var finalPlan: SoundTriggerPlan?
+
+        for (offset, character) in text.enumerated() {
+            finalPlan = engine.plan(for: KeyboardInput(
+                symbol: symbol(for: character),
+                keyCode: UInt16(offset),
+                source: .localApp,
+                timestamp: Date(timeIntervalSinceReferenceDate: TimeInterval(offset))
+            ))
+        }
+
+        #expect(finalPlan != nil)
+        #expect(!finalPlan!.debugSummary.localizedCaseInsensitiveContains("secret love"))
+        #expect(!finalPlan!.debugSummary.localizedCaseInsensitiveContains("secret"))
+    }
+
+    @MainActor
     @Test func cadenceTrackerRaisesIntensityForFastTyping() {
         var tracker = TypingCadenceTracker()
 
@@ -498,6 +618,48 @@ struct NoisyKeysTests {
         #expect(c4 != nil)
         #expect(f4 != nil)
         #expect(c4! < f4!)
+    }
+
+    private func feed(
+        _ text: String,
+        into coordinator: inout TypingVibeCoordinator,
+        start: TimeInterval = 0,
+        availability: AppleIntelligenceAvailability
+    ) -> TypingVibeCoordinatorUpdate {
+        var lastUpdate = TypingVibeCoordinatorUpdate(
+            snapshot: coordinator.currentSnapshot,
+            analysisRequest: nil
+        )
+
+        for (offset, character) in text.enumerated() {
+            lastUpdate = coordinator.register(
+                symbol: symbol(for: character),
+                at: Date(timeIntervalSinceReferenceDate: start + TimeInterval(offset) * 0.2),
+                appleAvailability: availability
+            )
+        }
+
+        return lastUpdate
+    }
+
+    private func symbol(for character: Character) -> KeyboardSymbol {
+        if character == " " {
+            return .space
+        }
+
+        if character == "\n" {
+            return .returnKey
+        }
+
+        if character.isLetter {
+            return .letter(Character(String(character).lowercased()))
+        }
+
+        if character.isNumber {
+            return .number(character)
+        }
+
+        return .punctuation(character)
     }
 
 }

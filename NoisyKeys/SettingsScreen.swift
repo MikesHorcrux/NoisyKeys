@@ -19,8 +19,13 @@ struct SettingsScreen: View {
                 .tabItem {
                     Label("Sound", systemImage: "music.note")
                 }
+
+            VibeSettingsPane(controller: controller)
+                .tabItem {
+                    Label("Vibe", systemImage: "sparkles")
+                }
         }
-        .frame(width: 520, height: 390)
+        .frame(width: 540, height: 430)
         .scenePadding()
     }
 }
@@ -137,6 +142,57 @@ private struct SoundSettingsPane: View {
                         controller.selectSoundMode(.customMix, previewSelection: true)
                     }
                 }
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.top, 8)
+    }
+}
+
+private struct VibeSettingsPane: View {
+    @ObservedObject var controller: KeyboardNoiseController
+
+    var body: some View {
+        Form {
+            Section("Vibe Detection") {
+                Toggle(isOn: Binding(
+                    get: { controller.isVibeDetectionEnabled },
+                    set: { controller.setVibeDetectionEnabled($0) }
+                )) {
+                    Text("Adapt sound to typing vibe")
+                }
+
+                LabeledContent("Status") {
+                    Text(controller.vibeStatusDescription)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+
+            Section("Analyzer") {
+                Picker("Mode", selection: Binding(
+                    get: { controller.vibeAnalysisMode },
+                    set: { controller.setVibeAnalysisMode($0) }
+                )) {
+                    ForEach(VibeAnalysisMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!controller.isVibeDetectionEnabled)
+            }
+
+            Section("Response") {
+                Picker("Intensity", selection: Binding(
+                    get: { controller.vibeResponseIntensity },
+                    set: { controller.setVibeResponseIntensity($0) }
+                )) {
+                    ForEach(TypingVibeResponseIntensity.allCases) { intensity in
+                        Text(intensity.displayName).tag(intensity)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!controller.isVibeDetectionEnabled)
             }
         }
         .formStyle(.grouped)

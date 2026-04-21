@@ -28,11 +28,18 @@ final class KeyboardNoiseController: ObservableObject {
     @Published var totalKeyPresses = 0
     @Published var topKeyStats: [AdaptiveKeyStat] = []
     @Published var customPianoSettings = CustomPianoSettings.default
+    @Published var isVibeDetectionEnabled = true
+    @Published var vibeAnalysisMode: VibeAnalysisMode = .automatic
+    @Published var vibeResponseIntensity: TypingVibeResponseIntensity = .balanced
+    @Published var vibeStatusDescription = "Local vibe engine"
 
     private let player = KeyboardSynthPlayer()
     private let playbackQueue = DispatchQueue(label: "NoisyKeys.Playback")
     private let preferences: NoisyKeysUserPreferences
+    private let appleVibeAnalyzer: VibeAnalyzer
     private var musicEngine = KeyboardMusicEngine(persistentLearning: true)
+    private var vibeCoordinator = TypingVibeCoordinator()
+    private var pendingVibeAnalysisWorkItem: DispatchWorkItem?
     private var localMonitor: Any?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
@@ -43,15 +50,30 @@ final class KeyboardNoiseController: ObservableObject {
     private var displayRefreshWorkItem: DispatchWorkItem?
     private let displayRefreshInterval: TimeInterval = 0.08
 
-    init(preferences: NoisyKeysUserPreferences = .standard) {
+    init(
+        preferences: NoisyKeysUserPreferences = .standard,
+        appleVibeAnalyzer: VibeAnalyzer = AppleIntelligenceVibeAnalyzer()
+    ) {
         self.preferences = preferences
+        self.appleVibeAnalyzer = appleVibeAnalyzer
 
         let storedCustomPianoSettings = preferences.customPianoSettings
+        let storedVibeConfiguration = preferences.typingVibeConfiguration
+        vibeCoordinator = TypingVibeCoordinator(configuration: storedVibeConfiguration)
+        let vibeSnapshot = vibeCoordinator.updateConfiguration(
+            storedVibeConfiguration,
+            appleAvailability: appleVibeAnalyzer.availability
+        )
         musicEngine.setCustomPianoSettings(storedCustomPianoSettings)
         musicEngine.setSoundMode(preferences.selectedSoundMode)
+        musicEngine.setTypingVibeSnapshot(vibeSnapshot)
 
         let selectionState = makeSelectionState()
         isNoiseEnabled = preferences.isNoiseEnabled
+        isVibeDetectionEnabled = storedVibeConfiguration.isEnabled
+        vibeAnalysisMode = storedVibeConfiguration.mode
+        vibeResponseIntensity = storedVibeConfiguration.responseIntensity
+        vibeStatusDescription = vibeSnapshot.statusDescription
         selectedSoundMode = selectionState.soundMode
         selectedProfileDisplayName = selectionState.profileDisplayName
         selectedProfileSummary = selectionState.profileSummary
@@ -191,6 +213,24 @@ final class KeyboardNoiseController: ObservableObject {
         updateCustomPianoSettings(settings)
     }
 
+    func setVibeDetectionEnabled(_ isEnabled: Bool) {
+        var configuration = currentVibeConfiguration
+        configuration.isEnabled = isEnabled
+        updateVibeConfiguration(configuration)
+    }
+
+    func setVibeAnalysisMode(_ mode: VibeAnalysisMode) {
+        var configuration = currentVibeConfiguration
+        configuration.mode = mode
+        updateVibeConfiguration(configuration)
+    }
+
+    func setVibeResponseIntensity(_ intensity: TypingVibeResponseIntensity) {
+        var configuration = currentVibeConfiguration
+        configuration.responseIntensity = intensity
+        updateVibeConfiguration(configuration)
+    }
+
     private func installLocalMonitorIfNeeded() {
         guard localMonitor == nil else { return }
 
@@ -316,6 +356,16 @@ final class KeyboardNoiseController: ObservableObject {
             processedKeyPresses += 1
         }
 
+        let vibeUpdate = vibeCoordinator.register(
+            symbol: input.symbol,
+            at: input.timestamp,
+            appleAvailability: appleVibeAnalyzer.availability
+        )
+        musicEngine.setTypingVibeSnapshot(vibeUpdate.snapshot)
+        if let analysisRequest = vibeUpdate.analysisRequest {
+            scheduleVibeAnalysis(analysisRequest)
+        }
+
         let plan = musicEngine.plan(for: input)
         player.play(plan)
         let displayState = makeDisplayState(for: plan, totalKeyPresses: processedKeyPresses)
@@ -326,6 +376,14 @@ final class KeyboardNoiseController: ObservableObject {
         playbackQueue.sync {
             player.resetPerformanceState()
         }
+    }
+
+    private var currentVibeConfiguration: TypingVibeConfiguration {
+        TypingVibeConfiguration(
+            isEnabled: isVibeDetectionEnabled,
+            mode: vibeAnalysisMode,
+            responseIntensity: vibeResponseIntensity
+        )
     }
 
     private func makeSelectionState() -> ControllerSelectionState {
@@ -361,7 +419,8 @@ final class KeyboardNoiseController: ObservableObject {
             learnedKeysDescription: musicEngine.learnedKeysSummary,
             adaptiveMappingDescription: musicEngine.adaptiveMappingDescription,
             performanceDescription: musicEngine.performanceDescription,
-            topKeyStats: musicEngine.topKeyStats
+            topKeyStats: musicEngine.topKeyStats,
+            vibeStatusDescription: vibeCoordinator.currentSnapshot.statusDescription
         )
     }
 
@@ -372,6 +431,63 @@ final class KeyboardNoiseController: ObservableObject {
         }
         preferences.setCustomPianoSettings(selectionState.customPianoSettings)
         applySelectionState(selectionState)
+    }
+
+    private func updateVibeConfiguration(_ configuration: TypingVibeConfiguration) {
+        let snapshot = playbackQueue.sync { [self] in
+            pendingVibeAnalysisWorkItem?.cancel()
+            pendingVibeAnalysisWorkItem = nil
+            let snapshot = vibeCoordinator.updateConfiguration(
+                configuration,
+                appleAvailability: appleVibeAnalyzer.availability
+            )
+            musicEngine.setTypingVibeSnapshot(snapshot)
+            return snapshot
+        }
+
+        preferences.setTypingVibeConfiguration(configuration)
+        isVibeDetectionEnabled = configuration.isEnabled
+        vibeAnalysisMode = configuration.mode
+        vibeResponseIntensity = configuration.responseIntensity
+        vibeStatusDescription = snapshot.statusDescription
+    }
+
+    private func scheduleVibeAnalysis(_ request: TypingVibeAnalysisRequest) {
+        pendingVibeAnalysisWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+
+            let analyzer = self.appleVibeAnalyzer
+            Task(priority: .utility) { [weak self] in
+                guard let result = await analyzer.analyze(text: request.text) else { return }
+
+                self?.playbackQueue.async { [weak self] in
+                    guard let self else { return }
+                    guard let snapshot = self.vibeCoordinator.applyExternalResult(
+                        result,
+                        requestID: request.id
+                    ) else {
+                        return
+                    }
+
+                    self.musicEngine.setTypingVibeSnapshot(snapshot)
+                    self.enqueueVibeStatus(snapshot.statusDescription)
+                }
+            }
+        }
+
+        pendingVibeAnalysisWorkItem = workItem
+        playbackQueue.asyncAfter(
+            deadline: .now() + request.debounceInterval,
+            execute: workItem
+        )
+    }
+
+    private func enqueueVibeStatus(_ statusDescription: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.vibeStatusDescription = statusDescription
+        }
     }
 
     private func enqueueDisplayState(_ state: ControllerDisplayState, immediate: Bool = false) {
@@ -410,6 +526,7 @@ final class KeyboardNoiseController: ObservableObject {
         adaptiveMappingDescription = state.adaptiveMappingDescription
         performanceDescription = state.performanceDescription
         topKeyStats = state.topKeyStats
+        vibeStatusDescription = state.vibeStatusDescription
     }
 }
 
@@ -422,6 +539,9 @@ struct NoisyKeysUserPreferences {
         static let customPianoPitch = "noisyKeys.customPiano.pitch.v1"
         static let customPianoTone = "noisyKeys.customPiano.tone.v1"
         static let customPianoVibe = "noisyKeys.customPiano.vibe.v1"
+        static let vibeDetectionEnabled = "noisyKeys.vibeDetection.enabled.v1"
+        static let vibeAnalysisMode = "noisyKeys.vibeDetection.analysisMode.v1"
+        static let vibeResponseIntensity = "noisyKeys.vibeDetection.responseIntensity.v1"
     }
 
     private let defaults: UserDefaults
@@ -455,6 +575,14 @@ struct NoisyKeysUserPreferences {
         )
     }
 
+    var typingVibeConfiguration: TypingVibeConfiguration {
+        TypingVibeConfiguration(
+            isEnabled: isVibeDetectionEnabled,
+            mode: vibeAnalysisMode,
+            responseIntensity: vibeResponseIntensity
+        )
+    }
+
     func setNoiseEnabled(_ isEnabled: Bool) {
         defaults.set(isEnabled, forKey: Keys.isNoiseEnabled)
     }
@@ -467,6 +595,12 @@ struct NoisyKeysUserPreferences {
         defaults.set(settings.pitch.rawValue, forKey: Keys.customPianoPitch)
         defaults.set(settings.tone.rawValue, forKey: Keys.customPianoTone)
         defaults.set(settings.vibe.rawValue, forKey: Keys.customPianoVibe)
+    }
+
+    func setTypingVibeConfiguration(_ configuration: TypingVibeConfiguration) {
+        defaults.set(configuration.isEnabled, forKey: Keys.vibeDetectionEnabled)
+        defaults.set(configuration.mode.rawValue, forKey: Keys.vibeAnalysisMode)
+        defaults.set(configuration.responseIntensity.rawValue, forKey: Keys.vibeResponseIntensity)
     }
 
     private var customPianoPitch: CustomPianoPitch {
@@ -495,6 +629,32 @@ struct NoisyKeysUserPreferences {
 
         return vibe
     }
+
+    private var isVibeDetectionEnabled: Bool {
+        guard defaults.object(forKey: Keys.vibeDetectionEnabled) != nil else {
+            return TypingVibeConfiguration.defaultValue.isEnabled
+        }
+
+        return defaults.bool(forKey: Keys.vibeDetectionEnabled)
+    }
+
+    private var vibeAnalysisMode: VibeAnalysisMode {
+        guard let rawValue = defaults.string(forKey: Keys.vibeAnalysisMode),
+              let mode = VibeAnalysisMode(rawValue: rawValue) else {
+            return TypingVibeConfiguration.defaultValue.mode
+        }
+
+        return mode
+    }
+
+    private var vibeResponseIntensity: TypingVibeResponseIntensity {
+        guard let rawValue = defaults.string(forKey: Keys.vibeResponseIntensity),
+              let intensity = TypingVibeResponseIntensity(rawValue: rawValue) else {
+            return TypingVibeConfiguration.defaultValue.responseIntensity
+        }
+
+        return intensity
+    }
 }
 
 private struct ControllerSelectionState {
@@ -517,6 +677,7 @@ private struct ControllerDisplayState {
     let adaptiveMappingDescription: String
     let performanceDescription: String
     let topKeyStats: [AdaptiveKeyStat]
+    let vibeStatusDescription: String
 }
 
 enum KeyboardEventFilter {
