@@ -451,7 +451,7 @@ struct NoisyKeysTests {
     }
 
     @MainActor
-    @Test func burstKeepsItsLockedMoodUntilPause() {
+    @Test func strongVibeCanReplaceLockedMoodInsideActiveBurst() {
         var engine = KeyboardMusicEngine(instrument: .piano)
         let sequence: [(KeyboardSymbol, TimeInterval)] = [
             (.letter("l"), 0.0),
@@ -475,8 +475,29 @@ struct NoisyKeysTests {
         }
 
         #expect(finalPlan != nil)
-        #expect(finalPlan?.textMood == .joyful)
+        #expect(finalPlan?.textMood == .angry)
+        #expect(finalPlan?.performanceStyle == .stormy)
+    }
+
+    @MainActor
+    @Test func neutralPrefixCanTurnPlayfulWithoutWaitingForPause() {
+        let finalPlan = finalPlan(for: "this is fun lol", interval: 0.14)
+
+        #expect(finalPlan != nil)
+        #expect(finalPlan?.textMood == .playful)
         #expect(finalPlan?.performanceStyle == .bright)
+    }
+
+    @MainActor
+    @Test func vibeMoodMakesVelocityDifferenceAudible() {
+        let playfulPlan = finalPlan(for: "haha fun lol", interval: 0.22)
+        let sadPlan = finalPlan(for: "sad lonely", interval: 0.22)
+
+        #expect(playfulPlan != nil)
+        #expect(sadPlan != nil)
+        #expect(playfulPlan!.textMood == .playful)
+        #expect(sadPlan!.textMood == .sad)
+        #expect(playfulPlan!.velocity > sadPlan!.velocity + 0.16)
     }
 
     @MainActor
@@ -660,6 +681,22 @@ struct NoisyKeysTests {
         }
 
         return .punctuation(character)
+    }
+
+    private func finalPlan(for text: String, interval: TimeInterval) -> SoundTriggerPlan? {
+        var engine = KeyboardMusicEngine(instrument: .piano)
+        var finalPlan: SoundTriggerPlan?
+
+        for (offset, character) in text.enumerated() {
+            finalPlan = engine.plan(for: KeyboardInput(
+                symbol: symbol(for: character),
+                keyCode: UInt16(offset),
+                source: .localApp,
+                timestamp: Date(timeIntervalSinceReferenceDate: TimeInterval(offset) * interval)
+            ))
+        }
+
+        return finalPlan
     }
 
 }

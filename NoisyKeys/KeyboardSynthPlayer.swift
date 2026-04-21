@@ -284,13 +284,16 @@ final class KeyboardSynthPlayer {
     private func configureEffects(for plan: SoundTriggerPlan) {
         let effectProfile = EffectProfileKey(
             instrument: plan.instrument,
-            profileID: plan.profile.id
+            profileID: plan.profile.id,
+            performanceStyle: plan.performanceStyle,
+            textMood: plan.textMood,
+            responseIntensity: plan.vibeResponseIntensity
         )
         guard currentEffectProfile != effectProfile else { return }
 
         switch plan.instrument {
         case .piano:
-            configurePianoEffects(for: plan.profile)
+            configurePianoEffects(for: plan)
         case .loFiKeys:
             configureLoFiEffects(for: plan.profile)
         }
@@ -308,8 +311,12 @@ final class KeyboardSynthPlayer {
         }
     }
 
-    private func configurePianoEffects(for profile: InstrumentProfileSnapshot) {
-        applyEffectConfiguration(PianoPlaybackProfile.effectConfiguration(for: profile))
+    private func configurePianoEffects(for plan: SoundTriggerPlan) {
+        applyEffectConfiguration(PianoPlaybackProfile.effectConfiguration(
+            for: plan.profile,
+            textMood: plan.textMood,
+            responseIntensity: plan.vibeResponseIntensity
+        ))
     }
 
     private func configureLoFiEffects(for profile: InstrumentProfileSnapshot) {
@@ -332,6 +339,9 @@ final class KeyboardSynthPlayer {
 private struct EffectProfileKey: Equatable {
     let instrument: KeyboardInstrument
     let profileID: String
+    let performanceStyle: KeyboardPerformanceStyle
+    let textMood: TypingTextMood
+    let responseIntensity: TypingVibeResponseIntensity
 }
 
 private final class SamplerVoice {

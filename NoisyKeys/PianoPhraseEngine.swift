@@ -115,19 +115,19 @@ enum PianoPlaybackProfile {
 
         switch role {
         case .melody:
-            baseDuration = 0.82
+            baseDuration = 0.96
         case .pulse:
-            baseDuration = 0.24
+            baseDuration = 0.34
         case .cadence:
             baseDuration = 1.08
         case .tension:
-            baseDuration = 0.5
+            baseDuration = 0.58
         case .texture:
-            baseDuration = 0.44
+            baseDuration = 0.58
         case .accent:
-            baseDuration = 0.6
+            baseDuration = 0.72
         case .navigation:
-            baseDuration = 0.46
+            baseDuration = 0.56
         }
 
         let profileScale: Double
@@ -157,22 +157,45 @@ enum PianoPlaybackProfile {
         let styleScale: Double
         switch performanceStyle {
         case .mellow:
-            styleScale = 0.98
+            styleScale = 0.94
         case .warm:
-            styleScale = 1
+            styleScale = 0.96
         case .bright:
-            styleScale = 1.02
+            styleScale = 1
         case .driving:
-            styleScale = 1.04
+            styleScale = 1.02
         case .stormy:
-            styleScale = 1.05
+            styleScale = 1.04
         }
 
         return styleScale * profile.baseVelocityScale
     }
 
-    static func effectConfiguration(for profile: InstrumentProfileSnapshot) -> InstrumentEffectConfiguration {
-        profile.effectConfiguration
+    static func effectConfiguration(
+        for profile: InstrumentProfileSnapshot,
+        textMood: TypingTextMood = .neutral,
+        responseIntensity: TypingVibeResponseIntensity = .balanced
+    ) -> InstrumentEffectConfiguration {
+        let base = profile.effectConfiguration
+        let strength = effectStrength(for: responseIntensity)
+        let shaping = effectShaping(for: textMood)
+
+        return InstrumentEffectConfiguration(
+            eqBands: adjustedEQBands(
+                base.eqBands,
+                low: shaping.low * strength,
+                mid: shaping.mid * strength,
+                high: shaping.high * strength
+            ),
+            reverbPreset: base.reverbPreset,
+            reverbMix: clamped(base.reverbMix + (shaping.reverb * strength), lower: 0, upper: 60),
+            delayTime: base.delayTime,
+            delayFeedback: clamped(base.delayFeedback + (shaping.delayFeedback * strength), lower: 0, upper: 55),
+            delayLowPassCutoff: base.delayLowPassCutoff,
+            delayMix: clamped(base.delayMix + (shaping.delayMix * strength), lower: 0, upper: 38),
+            spaceVolume: clamped(base.spaceVolume + (shaping.space * strength), lower: 0.62, upper: 1),
+            outputVolume: clamped(base.outputVolume + (shaping.output * strength), lower: 0.55, upper: 0.98)
+        )
     }
 
     private static func durationMultiplier(
@@ -222,15 +245,15 @@ enum PianoPlaybackProfile {
     ) -> Double {
         switch performanceStyle {
         case .mellow:
-            return role == .pulse ? 0.92 : 1.1
+            return role == .pulse ? 1.02 : 1.18
         case .warm:
-            return role == .pulse ? 0.88 : 1.02
+            return role == .pulse ? 0.96 : 1.08
         case .bright:
-            return role == .pulse ? 0.64 : 0.96
+            return role == .pulse ? 0.78 : 1.02
         case .driving:
-            return role == .pulse ? 0.56 : 0.9
+            return role == .pulse ? 0.72 : 0.98
         case .stormy:
-            return role == .pulse ? 0.52 : 0.86
+            return role == .pulse ? 0.66 : 0.94
         }
     }
 
@@ -255,10 +278,74 @@ enum PianoPlaybackProfile {
                 return 1
             }
         case .pulse:
-            return averageInterval < 0.28 ? 0.84 : 1
+            return averageInterval < 0.28 ? 0.94 : 1
         case .tension, .texture, .accent, .navigation:
             return 1
         }
+    }
+
+    private static func effectStrength(for responseIntensity: TypingVibeResponseIntensity) -> Float {
+        switch responseIntensity {
+        case .subtle:
+            return 0.45
+        case .balanced:
+            return 1
+        case .dramatic:
+            return 1.25
+        }
+    }
+
+    private static func effectShaping(
+        for textMood: TypingTextMood
+    ) -> (
+        low: Float,
+        mid: Float,
+        high: Float,
+        reverb: Float,
+        delayMix: Float,
+        delayFeedback: Float,
+        space: Float,
+        output: Float
+    ) {
+        switch textMood {
+        case .neutral:
+            return (0, 0, 0, 0, 0, 0, 0, 0)
+        case .joyful:
+            return (-0.6, 0.3, 1.5, 2.5, 1.0, 0.5, 0.01, 0)
+        case .playful:
+            return (-0.8, 0.2, 2.2, 1.5, 1.8, 0.8, 0.01, 0)
+        case .tender:
+            return (0.5, 0.4, -1.1, 5.0, 2.5, 0.5, 0.02, -0.02)
+        case .focused:
+            return (-0.2, 0.5, -0.4, -2.0, -1.5, -0.5, -0.01, -0.03)
+        case .tense:
+            return (0.8, 0.2, -0.8, -1.0, -1.0, -0.4, 0, -0.02)
+        case .angry:
+            return (1.2, 0.4, -1.4, -2.5, -2.0, -0.8, -0.01, -0.01)
+        case .sad:
+            return (0.8, -0.2, -1.6, 7.0, 3.2, 0.6, 0.02, -0.04)
+        }
+    }
+
+    private static func adjustedEQBands(
+        _ bands: [EQBandConfiguration],
+        low: Float,
+        mid: Float,
+        high: Float
+    ) -> [EQBandConfiguration] {
+        let gains = [low, mid, high]
+        return bands.enumerated().map { index, band in
+            EQBandConfiguration(
+                filterType: band.filterType,
+                frequency: band.frequency,
+                bandwidth: band.bandwidth,
+                gain: band.gain + gains[min(index, gains.count - 1)]
+            )
+        }
+    }
+
+    private static func clamped(_ value: Float, lower: Float, upper: Float) -> Float {
+        Swift.min(Swift.max(value, lower), upper)
     }
 }
 
